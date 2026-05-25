@@ -5264,16 +5264,18 @@
         const rows = currentDailyData
           .filter(r => r.studentId && !String(r.studentId).startsWith('temp_'))
           .map(r => ({
-            student_id:      String(r.studentId),
-            date:            date,
-            school:          currentSchool,
-            is_absent:       !!r.isAbsent,
-            exit_time:       r.exitTime || '',
-            has_ext_morn:    !!r.hasExtMorn,
-            has_bento:       !!r.hasBento,
-            has_large_bento: !!r.hasLargeBento,
-            has_potato:      !!r.hasPotato,
-            has_long_hol:    !!r.hasLongHol,
+            student_id:        r.studentId,
+            date:              date,
+            school:            currentSchool,
+            is_absent:         !!r.isAbsent,
+            extension_minutes: sbCalcExtMinutes(r.exitTime),
+            has_morning_ext:   !!r.hasExtMorn,
+            has_bento:         !!r.hasBento,
+            has_large_bento:   !!r.hasLargeBento,
+            has_potato:        !!r.hasPotato,
+            is_saturday:       isSat,
+            is_long_holiday:   !!r.hasLongHol,
+            event_fee:         parseInt(r.eventFee) || 0,
           }));
 
         if (!rows.length) { sbHideLoading(); return; }
