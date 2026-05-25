@@ -4122,15 +4122,21 @@
                 bankInfo: bankInfo
               });
             } else {
+              // cols[0] が既知の校舎名と一致する場合のみ校舎列として扱う。
+              // それ以外（ID・氏名など）の場合は UIで選択した targetSchool を使用する。
+              const KNOWN_SCHOOLS = ['中洲校', '大高校', '御南校'];
+              const col0IsSchool = KNOWN_SCHOOLS.includes((cols[0] || '').trim());
+              const school  = targetSchool || (col0IsSchool ? cols[0] : '未登録');
+              const nameCol = col0IsSchool ? 1 : 0;  // 校舎列がなければ0列目が氏名
               newStudents.push({
                 id: i,
-                school: cols[0] || targetSchool,
-                name: cols[1] || '不明',
-                grade: cols[2] || '未登録',
-                course: cols[3] || '月極全日（1〜3年）',
-                transport: cols[4] === 'あり',
-                lunch: cols[5] === 'あり',
-                bankInfo: cols[6] || '未登録'
+                school: school,
+                name: cols[nameCol] || '不明',
+                grade: cols[nameCol + 1] || '未登録',
+                course: cols[nameCol + 2] || '月極全日（1〜3年）',
+                transport: cols[nameCol + 3] === 'あり',
+                lunch: cols[nameCol + 4] === 'あり',
+                bankInfo: cols[nameCol + 5] || '未登録'
               });
             }
           }
