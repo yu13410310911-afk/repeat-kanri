@@ -4094,6 +4094,29 @@
         if (parsedRows.length > 0) {
           const header = parsedRows[0];
           const isComplexFormat = header.length > 20 && header.includes('会員番号');
+          // 出席簿フォーマット: #,お名前,学年,コース,出欠予定,体温,ついた,...,日替り弁当,...
+          const isAttendanceSheetFormat = header[0] === '#' && header.includes('お名前') && header.includes('コース');
+
+          // 出席簿コース名 → システム内コース名へのマッピング
+          function mapCourse(courseStr, gradeStr) {
+            const upperGrades = ['小４','小５','小６','4年生','5年生','6年生'];
+            const isUpper = upperGrades.some(g => gradeStr.includes(g.replace('年生','').replace('小','')));
+            if (courseStr.includes('全コース'))  return isUpper ? '月極全日（4〜6年）' : '月極全日（1〜3年）';
+            if (courseStr.includes('12日'))       return '12日間コース';
+            if (courseStr.includes('特別'))       return isUpper ? '月極全日 特別コース（4〜6年）' : '月極全日 特別コース（1〜3年）';
+            if (courseStr.includes('スポット'))   return 'スポット';
+            return courseStr || '月極全日（1〜3年）';
+          }
+          // 学年表記の統一: 小１ → 1年生
+          function normalizeGrade(g) {
+            return (g || '').replace(/小([１-６1-6])/, (_, n) => {
+              const map = {'１':'1','２':'2','３':'3','４':'4','５':'5','６':'6'};
+              return (map[n] || n) + '年生';
+            });
+          }
+          // 出席簿の弁当列インデックスを動的取得
+          const bentoIdx     = header.indexOf('日替り弁当');
+          const bentoLgIdx   = header.indexOf('日替り弁当（大盛）');
 
           for (let i = 1; i < parsedRows.length; i++) {
             const cols = parsedRows[i];
@@ -4103,7 +4126,7 @@
               const lastName = cols[2] || '';
               const firstName = cols[3] || '';
               const fullName = lastName || firstName ? `${lastName} ${firstName}`.trim() : '不明';
-              
+
               const schoolName = cols[50] || '';
               const age = cols[8] ? cols[8] + '歳' : '';
               const gradeStr = [schoolName, age].filter(x => x).join(' ') || '未登録';
@@ -4113,7 +4136,7 @@
 
               newStudents.push({
                 id: i,
-                school: targetSchool, // UIで選択・入力された校舎名をセット
+                school: targetSchool,
                 name: fullName,
                 grade: gradeStr,
                 course: courseStr,
@@ -4121,13 +4144,29 @@
                 lunch: false,
                 bankInfo: bankInfo
               });
+            } else if (isAttendanceSheetFormat) {
+              // 出席簿フォーマット: #,お名前,学年,コース,...
+              const rawGrade  = (cols[2] || '').trim();
+              const rawCourse = (cols[3] || '').trim();
+              const hasBento  = bentoIdx >= 0 && cols[bentoIdx] === '1';
+              const hasLargeBento = bentoLgIdx >= 0 && cols[bentoLgIdx] === '1';
+              newStudents.push({
+                id: i,
+                school: targetSchool,
+                name: (cols[1] || '').replace(/　/g, ' ').trim() || '不明',
+                grade: normalizeGrade(rawGrade),
+                course: mapCourse(rawCourse, rawGrade),
+                transport: false,
+                lunch: hasBento || hasLargeBento,
+                hasLargeBento: hasLargeBento,
+                bankInfo: ''
+              });
             } else {
-              // cols[0] が既知の校舎名と一致する場合のみ校舎列として扱う。
-              // それ以外（ID・氏名など）の場合は UIで選択した targetSchool を使用する。
+              // 標準フォーマット（システムからのExcel出力: 校舎,氏名,学年,コース,...）
               const KNOWN_SCHOOLS = ['中洲校', '大高校', '御南校'];
               const col0IsSchool = KNOWN_SCHOOLS.includes((cols[0] || '').trim());
               const school  = targetSchool || (col0IsSchool ? cols[0] : '未登録');
-              const nameCol = col0IsSchool ? 1 : 0;  // 校舎列がなければ0列目が氏名
+              const nameCol = col0IsSchool ? 1 : 0;
               newStudents.push({
                 id: i,
                 school: school,
