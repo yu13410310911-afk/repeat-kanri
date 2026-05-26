@@ -2828,16 +2828,30 @@
 
             // 生徒マスタ（STUDENTS）との紐付け（名前の部分一致で仮判定）
             const sNameCompact = name.replace(/\s+/g, '');
-            const matchedStudent = STUDENTS.find(s => s.name.replace(/\s+/g, '') === sNameCompact) || {
-              id: 'temp_' + i, name: name, grade: '未登録', course: '不明', transport: false, lunch: false
-            };
+            let matchedStudent = STUDENTS.find(s => s.name.replace(/\s+/g, '') === sNameCompact);
 
-            // CSV側に学年やコースの情報がある場合は、マスタがない場合・あるいは補完として適用する
-            if (gradeIndex >= 0 && cols.length > gradeIndex && cols[gradeIndex]) {
-              matchedStudent.grade = cols[gradeIndex];
-            }
-            if (courseIndex >= 0 && cols.length > courseIndex && cols[courseIndex]) {
-              matchedStudent.course = cols[courseIndex];
+            // CSV側の学年・コース情報を取得
+            const csvGrade  = (gradeIndex  >= 0 && cols[gradeIndex])  ? cols[gradeIndex]  : '未登録';
+            const csvCourse = (courseIndex >= 0 && cols[courseIndex]) ? cols[courseIndex] : '月極全日（1〜3年）';
+
+            if (!matchedStudent) {
+              // 名簿に未登録 → 自動登録してから紐付け
+              const newId = Date.now() + Math.floor(Math.random() * 1000) + i;
+              matchedStudent = {
+                id: newId,
+                name: name,
+                school: currentSchool,
+                grade: csvGrade,
+                course: csvCourse,
+                transport: false,
+                lunch: false,
+                bankInfo: ''
+              };
+              STUDENTS.push(matchedStudent);
+              localStorage.setItem('repeatStudentsData', JSON.stringify(STUDENTS));
+            } else {
+              // マスタに存在する場合もCSV側の情報で補完（学校が未設定なら設定）
+              if (!matchedStudent.school) { matchedStudent.school = currentSchool; }
             }
 
             const isLongHol = document.getElementById('csvIsLongHol')?.checked || false;
@@ -3491,9 +3505,13 @@
 
       // 今回の入力分を追加
       currentDailyData.forEach(row => {
+        // grade/course は生徒マスタから補完（より正確なデータを保存する）
+        const masterStudent = STUDENTS.find(s => s.id === row.studentId);
         dataStore[date].push({
           studentId: row.studentId,
           name: row.name,
+          grade: (masterStudent?.grade) || row.grade || '未登録',
+          course: (masterStudent?.course) || row.course || '月極全日（1〜3年）',
           isAbsent: row.isAbsent,
           hasExtMorn: row.hasExtMorn,
           exitTime: row.exitTime,
@@ -3502,7 +3520,7 @@
           hasPotato: row.hasPotato,
           hasLongHol: row.hasLongHol,
           eventFee: row.eventFee || 0,
-          school: currentSchool
+          school: (masterStudent?.school) || currentSchool
         });
       });
 
@@ -3698,7 +3716,14 @@
         if (!date.startsWith(targetMonthStr)) return;
         (dataStore[date] || []).forEach(r => {
           if (!targetStudents.find(ts => ts.id === r.studentId)) {
-            targetStudents.push({ id: r.studentId, name: r.name, grade: r.grade, course: r.course || '不明', transport: false });
+            targetStudents.push({
+              id: r.studentId,
+              name: r.name,
+              grade: r.grade || '未登録',
+              course: r.course || '不明',
+              school: r.school || currentSchool,
+              transport: false
+            });
           }
         });
       });
@@ -3736,9 +3761,9 @@
       <tr>
         <td>
           <div style="font-weight:700;">${s.name}</div>
-          <div style="font-size:11px;color:var(--text-light);">${s.grade}</div>
+          <div style="font-size:11px;color:var(--text-light);">${s.grade || '未登録'} <span style="color:#CBD5E1;">|</span> ${s.school || '未登録'}</div>
         </td>
-        <td><span class="badge-course">${s.course}</span></td>
+        <td><span class="badge-course">${s.course || '不明'}</span></td>
         <td style="text-align:right;">¥${b.base.toLocaleString()}</td>
         <td style="text-align:right;">¥${(addFee + b.transportFee).toLocaleString()}</td>
         <td style="text-align:right;font-weight:700;color:var(--primary-dark);">¥${totalRowAmount.toLocaleString()}</td>
