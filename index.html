@@ -1793,7 +1793,7 @@
               <div style="display:flex; flex-direction:column; gap:12px; align-items:center;">
                 <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; justify-content:center;">
                   <label style="display:flex; align-items:center; gap:4px; font-weight:600; cursor:pointer;">
-                    <input type="checkbox" id="csvIsLongHol" style="transform:scale(1.2);"> 長期休業日
+                    <input type="checkbox" id="csvIsLongHol" style="transform:scale(1.2);" onchange="applyLongHolToAll(this.checked)"> 長期休業日
                   </label>
                   <div style="display:flex; align-items:center; gap:8px;">
                     <span style="font-weight:600;">イベント料金</span>
@@ -3420,6 +3420,19 @@
       else if (type === 'large-lunch') currentDailyData[index].hasLargeBento = active;
       else if (type === 'potato') currentDailyData[index].hasPotato = active;
       else if (type === 'longhol') currentDailyData[index].hasLongHol = active;
+    }
+
+    // 長期休業日チェックボックス → 全生徒のトグルに一括反映
+    function applyLongHolToAll(checked) {
+      if (!currentDailyData) return;
+      currentDailyData.forEach((row, index) => {
+        row.hasLongHol = checked;
+        const btn = document.getElementById(`toggle-longhol-${index}`);
+        if (btn) {
+          if (checked) btn.classList.add('active');
+          else btn.classList.remove('active');
+        }
+      });
     }
 
     function saveStaffDailyInput() {
