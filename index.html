@@ -1783,6 +1783,14 @@
               <span class="card-title"><i class="ph ph-check-circle"
                   style="vertical-align:middle;margin-right:4px;"></i> 出欠入力</span>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <div id="attAdminSchoolWrap" style="display:none;">
+                  <select id="attAdminSchool" class="form-select" style="margin:0;"
+                    onchange="currentSchool=this.value; renderAttendanceInput();">
+                    <option value="中洲校">中洲校</option>
+                    <option value="大高校">大高校</option>
+                    <option value="御南校">御南校</option>
+                  </select>
+                </div>
                 <input type="date" id="attDate" class="form-input" style="width:160px;margin:0;"
                   onchange="renderAttendanceInput()" />
               </div>
@@ -2139,6 +2147,7 @@
                     <tr>
                       <th style="width:100px;">日付</th>
                       <th>勤務時間 (開始 - 終了)</th>
+                      <th style="text-align:center; width:80px;">送迎</th>
                       <th style="text-align:right; width:80px;">時間</th>
                     </tr>
                   </thead>
@@ -2163,6 +2172,10 @@
                   <div class="summary-item">
                     <div class="summary-label">基本給与</div>
                     <div class="summary-val" id="sumBasePay">¥0</div>
+                  </div>
+                  <div class="summary-item">
+                    <div class="summary-label">送迎代金</div>
+                    <div class="summary-val" id="sumTrips">¥0</div>
                   </div>
                   <div class="summary-item">
                     <div class="summary-label">交通費</div>
@@ -2232,6 +2245,7 @@
                       <th>出勤数</th>
                       <th>勤務時間</th>
                       <th>基本給与</th>
+                      <th>送迎代金</th>
                       <th>交通費</th>
                       <th style="color:var(--primary-dark);">支払総額</th>
                     </tr>
@@ -2589,6 +2603,18 @@
       else if (pageId === 'page-billing') renderBilling();
       else if (pageId === 'page-calendar') renderCalendar();
       else if (pageId === 'page-attendance') {
+        // 管理者の場合のみ校舎セレクターを表示し、初期校舎を設定
+        const adminSchoolWrap = document.getElementById('attAdminSchoolWrap');
+        if (adminSchoolWrap) {
+          const isAdmin = currentUser && currentUser.role === 'admin';
+          adminSchoolWrap.style.display = isAdmin ? 'block' : 'none';
+          if (isAdmin && currentSchool === '全校舎') {
+            currentSchool = '中洲校';
+            document.getElementById('attAdminSchool').value = '中洲校';
+          } else if (isAdmin) {
+            document.getElementById('attAdminSchool').value = currentSchool;
+          }
+        }
         if (document.getElementById('attDate')?.value) renderAttendance();
       } else if (pageId === 'page-manuals-admin') renderManualsAdmin();
       else if (pageId === 'page-manuals-staff') renderManualsStaff();
@@ -3449,7 +3475,11 @@
         row.hasBento = document.getElementById(`toggle-lunch-${index}`)?.classList.contains('active') || false;
         row.hasLargeBento = document.getElementById(`toggle-large-lunch-${index}`)?.classList.contains('active') || false;
         row.hasPotato = document.getElementById(`toggle-potato-${index}`)?.classList.contains('active') || false;
-        row.hasLongHol = document.getElementById(`toggle-longhol-${index}`)?.classList.contains('active') || false;
+        // 長期休ボタンは祝日/土曜のみ表示されるため、平日は currentDailyData の値を保持
+        const longHolBtn = document.getElementById(`toggle-longhol-${index}`);
+        row.hasLongHol = longHolBtn
+          ? longHolBtn.classList.contains('active')
+          : (currentDailyData[index]?.hasLongHol || document.getElementById('csvIsLongHol')?.checked || false);
       });
 
       // 該当校舎のデータを上書き（他校舎のデータは残す）
@@ -4251,15 +4281,30 @@
 
     // ===== EXPORT =====
     function exportAttendance() {
-      const ym = '2026-03';
-      const headers = ['生徒名', '学年', '日付', '出欠', '延長', '延長時刻', '弁当', '土曜/休日'];
+      const ym = document.getElementById('billingMonth')?.value || new Date().toISOString().slice(0, 7);
+      const headers = ['生徒名', '学年', '校舎', '日付', '出欠', '朝延長', '夕延長', '延長時刻', '弁当', '土曜/長期休日', 'イベント料金'];
       const rows = [];
+      const schoolFilter = (currentUser?.role === 'admin') ? null : currentSchool;
       STUDENTS.forEach(s => {
-        Object.entries(attendanceData[s.id] || {}).forEach(([date, att]) => {
+        if (schoolFilter && s.school !== schoolFilter) return;
+        const sData = repeatSukumaneData || {};
+        Object.entries(sData).forEach(([date, dayRows]) => {
           if (!date.startsWith(ym)) return;
-          rows.push([s.name, s.grade, date, att.status, att.ext ? 'あり' : 'なし', att.extTime || '', att.lunch ? 'あり' : 'なし', att.saturday ? 'あり' : 'なし']);
+          const r = dayRows.find(x => String(x.studentId) === String(s.id));
+          if (!r) return;
+          rows.push([
+            s.name, s.grade, s.school, date,
+            r.isAbsent ? '欠席' : '出席',
+            r.hasExtMorn ? 'あり' : 'なし',
+            (r.exitTime && r.exitTime >= '18:30') ? 'あり' : 'なし',
+            r.exitTime || '',
+            r.hasBento ? 'あり' : 'なし',
+            r.hasLongHol ? 'あり' : 'なし',
+            r.eventFee || 0
+          ]);
         });
       });
+      if (rows.length === 0) { alert(`${ym} の出欠データがありません`); return; }
       downloadCSV([headers, ...rows], `出欠記録_${ym}.csv`);
     }
 
@@ -4392,6 +4437,7 @@
         let dayClass = dayOfWeek === 0 ? 'sun' : (dayOfWeek === 6 ? 'sat' : '');
         const savedData = staffShifts[dateStr] || { start: '', end: '', hours: 0 };
 
+        const savedTrips = savedData.trips || 0;
         html += `<tr data-date="${dateStr}">
       <td class="date-cell ${dayClass}">${month}/${i} (${payrollDayNames[dayOfWeek]})</td>
       <td>
@@ -4400,6 +4446,13 @@
           <span class="separator">~</span>
           <input type="time" class="time-input end-time" value="${savedData.end}" onchange="calcRow('${dateStr}')" />
           <button class="clear-btn" onclick="clearRow('${dateStr}')">×</button>
+        </div>
+      </td>
+      <td style="text-align:center;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
+          <button class="clear-btn" onclick="changeTransportTrips('${dateStr}',-1)" style="width:22px;height:22px;padding:0;font-size:14px;line-height:1;">－</button>
+          <span id="trips-${dateStr}" style="min-width:20px;text-align:center;font-weight:600;font-size:13px;">${savedTrips}</span>
+          <button class="clear-btn" onclick="changeTransportTrips('${dateStr}',1)" style="width:22px;height:22px;padding:0;font-size:14px;line-height:1;">＋</button>
         </div>
       </td>
       <td><div class="daily-hours" id="hours-${dateStr}">${savedData.hours ? savedData.hours.toFixed(2) : '-'}</div></td>
@@ -4426,7 +4479,8 @@
       document.getElementById(`hours-${dateStr}`).textContent = hours > 0 ? hours.toFixed(2) : '-';
 
       if (!shiftData[currentPayrollMonth][currentStaffId]) shiftData[currentPayrollMonth][currentStaffId] = {};
-      shiftData[currentPayrollMonth][currentStaffId][dateStr] = { start, end, hours };
+      const prevTrips = (shiftData[currentPayrollMonth][currentStaffId][dateStr]?.trips) || 0;
+      shiftData[currentPayrollMonth][currentStaffId][dateStr] = { start, end, hours, trips: prevTrips };
       updateMonthlyTotals();
     }
 
@@ -4445,20 +4499,37 @@
       }
     }
 
+    function changeTransportTrips(dateStr, delta) {
+      if (!shiftData[currentPayrollMonth] || !shiftData[currentPayrollMonth][currentStaffId]) return;
+      if (!shiftData[currentPayrollMonth][currentStaffId][dateStr]) {
+        shiftData[currentPayrollMonth][currentStaffId][dateStr] = { start: '', end: '', hours: 0, trips: 0 };
+      }
+      const day = shiftData[currentPayrollMonth][currentStaffId][dateStr];
+      day.trips = Math.max(0, Math.min(10, (day.trips || 0) + delta));
+      const el = document.getElementById(`trips-${dateStr}`);
+      if (el) el.textContent = day.trips;
+      updateMonthlyTotals();
+    }
+
     function updateMonthlyTotals() {
       if (!shiftData[currentPayrollMonth] || !shiftData[currentPayrollMonth][currentStaffId]) return;
       const staff = staffList.find(s => s.id === currentStaffId);
       const monthData = shiftData[currentPayrollMonth][currentStaffId];
-      let totalHours = 0, daysWorked = 0;
-      Object.values(monthData).forEach(day => { if (day.hours > 0) { totalHours += day.hours; daysWorked++; } });
+      let totalHours = 0, daysWorked = 0, totalTrips = 0;
+      Object.values(monthData).forEach(day => {
+        if (day.hours > 0) { totalHours += day.hours; daysWorked++; }
+        totalTrips += (day.trips || 0);
+      });
 
       const basePay = Math.floor(totalHours * staff.hourlyWage);
       const transportPay = daysWorked * staff.transportFee;
-      const totalPay = basePay + transportPay;
+      const tripsPay = totalTrips * 100;
+      const totalPay = basePay + transportPay + tripsPay;
 
       document.getElementById('sumHours').textContent = `${totalHours.toFixed(2)}h`;
       document.getElementById('sumDays').textContent = `${daysWorked}日`;
       document.getElementById('sumBasePay').textContent = `¥${basePay.toLocaleString()}`;
+      document.getElementById('sumTrips').textContent = totalTrips > 0 ? `¥${tripsPay.toLocaleString()} (${totalTrips}回)` : '¥0';
       document.getElementById('sumTransport').textContent = `¥${transportPay.toLocaleString()}`;
       document.getElementById('sumTotal').textContent = `¥${totalPay.toLocaleString()}`;
     }
@@ -4524,17 +4595,22 @@
         tfoot.innerHTML = ''; return;
       }
 
-      let html = '', gHours = 0, gBase = 0, gTrans = 0, gAll = 0;
+      let html = '', gHours = 0, gBase = 0, gTrans = 0, gTrips = 0, gAll = 0;
       staffList.forEach(staff => {
         const d = shiftData[listMonth][staff.id] || {};
-        let th = 0, dw = 0;
-        Object.values(d).forEach(day => { if (day.hours > 0) { th += day.hours; dw++; } });
+        let th = 0, dw = 0, tt = 0;
+        Object.values(d).forEach(day => {
+          if (day.hours > 0) { th += day.hours; dw++; }
+          tt += (day.trips || 0);
+        });
         if (dw > 0) {
-          const bp = Math.floor(th * staff.hourlyWage), tp = dw * staff.transportFee, tot = bp + tp;
-          gHours += th; gBase += bp; gTrans += tp; gAll += tot;
+          const bp = Math.floor(th * staff.hourlyWage), tp = dw * staff.transportFee, trp = tt * 100, tot = bp + tp + trp;
+          gHours += th; gBase += bp; gTrans += tp; gTrips += trp; gAll += tot;
+          const tripsLabel = tt > 0 ? `¥${trp.toLocaleString()} <span style="font-size:10px;color:#888;">(${tt}回)</span>` : '-';
           html += `<tr>
         <td style="font-weight:600;">${staff.name}</td><td>${dw}日</td><td>${th.toFixed(2)}h</td>
         <td>¥${bp.toLocaleString()} <span style="font-size:11px;color:#888;">(${staff.hourlyWage}/h)</span></td>
+        <td>${tripsLabel}</td>
         <td>¥${tp.toLocaleString()}</td><td style="font-weight:700; color:var(--primary-dark);">¥${tot.toLocaleString()}</td>
       </tr>`;
         }
@@ -4545,25 +4621,32 @@
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = html;
-        tfoot.innerHTML = `<tr><td>【合計】</td><td>-</td><td>${gHours.toFixed(2)}h</td><td>¥${gBase.toLocaleString()}</td><td>¥${gTrans.toLocaleString()}</td><td style="color:var(--primary); font-size:16px;">¥${gAll.toLocaleString()}</td></tr>`;
+        tfoot.innerHTML = `<tr><td>【合計】</td><td>-</td><td>${gHours.toFixed(2)}h</td><td>¥${gBase.toLocaleString()}</td><td>${gTrips > 0 ? '¥' + gTrips.toLocaleString() : '-'}</td><td>¥${gTrans.toLocaleString()}</td><td style="color:var(--primary); font-size:16px;">¥${gAll.toLocaleString()}</td></tr>`;
       }
     }
 
     function getStaffTotals(staffId, month) {
       const staff = staffList.find(s => s.id === staffId);
       const mData = (shiftData[month] || {})[staffId] || {};
-      let th = 0, dw = 0;
-      Object.values(mData).forEach(d => { if (d.hours > 0) { th += d.hours; dw++; } });
+      let th = 0, dw = 0, tt = 0;
+      Object.values(mData).forEach(d => {
+        if (d.hours > 0) { th += d.hours; dw++; }
+        tt += (d.trips || 0);
+      });
       const bp = Math.floor(th * staff.hourlyWage);
       const tp = dw * staff.transportFee;
-      return { staff, hours: th, days: dw, basePay: bp, transportPay: tp, totalPay: bp + tp, data: mData };
+      const trp = tt * 100;
+      return { staff, hours: th, days: dw, basePay: bp, transportPay: tp, tripsPay: trp, totalTrips: tt, totalPay: bp + tp + trp, data: mData };
     }
 
     function generatePDF() {
       const [year, month] = currentPayrollMonth.split('-');
-      const { staff, hours, days, basePay, transportPay, totalPay, data } = getStaffTotals(currentStaffId, currentPayrollMonth);
+      const { staff, hours, days, basePay, transportPay, tripsPay, totalTrips, totalPay, data } = getStaffTotals(currentStaffId, currentPayrollMonth);
       if (days === 0) { alert('勤務データがありません'); return; }
 
+      const tripsRow = totalTrips > 0
+        ? `<tr><th>送迎代金 (${totalTrips}回 × ¥100)</th><td>¥${tripsPay.toLocaleString()}</td><th></th><td></td></tr>`
+        : '';
       let content = `
     <div class="pdf-header"><div class="pdf-title">給与明細書</div></div>
     <div class="pdf-meta"><div><strong>従業員名：</strong> ${staff.name} 様</div><div><strong>対象月：</strong> ${year}年${parseInt(month)}月分</div></div>
@@ -4571,6 +4654,7 @@
     <table class="pdf-summary-table" style="margin-bottom: 30px; width: 100%;">
       <tr><th>出勤日数</th><td>${days} 日</td><th>合計勤務時間</th><td>${hours.toFixed(2)} 時間</td></tr>
       <tr><th>基本給与 (時給: ¥${staff.hourlyWage.toLocaleString()})</th><td>¥${basePay.toLocaleString()}</td><th>交通費 (${days}日 × ¥${staff.transportFee})</th><td>¥${transportPay.toLocaleString()}</td></tr>
+      ${tripsRow}
       <tr class="pdf-total-row"><th colspan="3" style="text-align:center;">当月差引支給総額</th><td style="color:#e65100;">¥${totalPay.toLocaleString()}</td></tr>
     </table>
     <h4>勤務実績詳細</h4>
@@ -5029,7 +5113,19 @@
           document.getElementById('stuModalName').value = s.name;
           document.getElementById('stuModalSchool').value = s.school || '中洲校';
           document.getElementById('stuModalGrade').value = s.grade;
-          document.getElementById('stuModalCourse').value = s.course;
+          const courseEl = document.getElementById('stuModalCourse');
+          courseEl.value = s.course;
+          if (!courseEl.value) {
+            const c = s.course || '';
+            if (c.includes('12日') && c.includes('特別')) courseEl.value = '12日間 特別コース';
+            else if (c.includes('12日')) courseEl.value = '12日間コース';
+            else if (c.includes('スポット') && c.includes('特別')) courseEl.value = 'スポット特別コース';
+            else if (c.includes('スポット')) courseEl.value = 'スポット';
+            else if (c.includes('特別') && c.match(/[456４５６]/)) courseEl.value = '月極全日 特別コース（4〜6年）';
+            else if (c.includes('特別')) courseEl.value = '月極全日 特別コース（1〜3年）';
+            else if (c.match(/[456４５６]/)) courseEl.value = '月極全日（4〜6年）';
+            else courseEl.value = '月極全日（1〜3年）';
+          }
           document.getElementById('stuModalTransport').checked = s.transport || false;
           document.getElementById('stuModalBank').value = (s.bankInfo || '').replace(/<br\/>/g, ' ');
         }
