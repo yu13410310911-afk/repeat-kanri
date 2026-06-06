@@ -3036,12 +3036,29 @@
       const spotDayRate = s.spotDayRate || 1200; // デフォルト1200円/日
       if (isSpotCourse) base = 0;
 
+      // 12日間コース: 年度累計12日を超えた分は特別コース料金(スポット利用)で加算
+      const is12DayCourse = s.course === '12日間コース';
+      let days12UsedBefore = 0; // 当月より前の今年度出席日数
+      if (is12DayCourse) {
+        const [ymY, ymM] = yearMonth.split('-').map(Number);
+        const syStartYear = ymM >= 4 ? ymY : ymY - 1;
+        const syStart = `${syStartYear}-04-01`;
+        Object.keys(dataStore).forEach(date => {
+          if (date >= yearMonth) return; // 当月以降は除外
+          if (date < syStart) return;    // 今年度より前も除外
+          const row = (dataStore[date] || []).find(r => String(r.studentId) === String(studentId));
+          if (row && !row.isAbsent) days12UsedBefore++;
+        });
+        // 前月までに既に12日使い切っていたら当月の基本料金は0
+        if (days12UsedBefore >= 12) base = 0;
+      }
+      let days12Quota = days12UsedBefore; // ループ中に更新する当月分込みの累計
+
       let extCount = 0, extMin = 0, lunchCount = 0, largeLunchCount = 0, potatoCount = 0, satCount = 0, holCount = 0, morningExtCount = 0, eventFeeTotal = 0, transportCount = 0, spotDayCount = 0;
 
-      // localStorageの実データ（repeatSukumaneData）から該当月のデータを抽出
-
-      Object.keys(dataStore).forEach(date => {
-        if (!date.startsWith(yearMonth)) return;
+      // localStorageの実データ（repeatSukumaneData）から該当月のデータを日付順に処理
+      const thisMonthDates = Object.keys(dataStore).filter(d => d.startsWith(yearMonth)).sort();
+      thisMonthDates.forEach(date => {
         const dayRecords = dataStore[date] || [];
         const att = dayRecords.find(r => r.studentId === studentId);
 
@@ -3049,6 +3066,16 @@
         if (att && !att.isAbsent) {
           // スポット: 出席1日をカウント
           if (isSpotCourse) spotDayCount++;
+
+          // 12日間コース: 12日超過分は特別コース料金
+          if (is12DayCourse) {
+            days12Quota++;
+            if (days12Quota > 12) {
+              // 超過日：特別コース相当（長期休3300円、平日2200円）
+              base += att.hasLongHol ? 3300 : 2200;
+            }
+          }
+
           // 夜間延長の計算
           if (att.exitTime && att.exitTime !== '') {
             const [h, m] = att.exitTime.split(':').map(Number);
@@ -3117,7 +3144,8 @@
 
       const total = base + extFee + lunchFee + largeLunchFee + potatoFee + satFee + holFee + transportFee + eventFeeTotal;
 
-      return { base, extFee, extUnits, morningExtCount, lunchFee, lunchCount, largeLunchFee, largeLunchCount, potatoFee, potatoCount, satFee, satCount, holFee, holCount, transportFee, eventFeeTotal, total, transportCount, spotDayCount };
+      const days12Excess = Math.max(0, days12Quota - 12); // 今月末時点の超過日数
+      return { base, extFee, extUnits, morningExtCount, lunchFee, lunchCount, largeLunchFee, largeLunchCount, potatoFee, potatoCount, satFee, satCount, holFee, holCount, transportFee, eventFeeTotal, total, transportCount, spotDayCount, days12Quota, days12Excess };
     }
 
     // ===== LOGIN & ROLE MANAGEMENT =====
@@ -3872,6 +3900,9 @@
         if ((s.course || '').includes('スポット') && b.spotDayCount > 0) {
           const rate = s.spotDayRate || 1200;
           detailStr += `<span class="badge-course">スポット${b.spotDayCount}日×¥${rate.toLocaleString()}</span> `;
+        }
+        if (s.course === '12日間コース' && b.days12Excess > 0) {
+          detailStr += `<span class="badge-course" style="background:#fde68a;color:#92400e;">超過${b.days12Excess}日(特別料金)</span> `;
         }
         if (b.morningExtCount > 0) detailStr += `<span class="badge-course">朝延長${b.morningExtCount}回</span> `;
         if (b.extUnits > 0) detailStr += `<span class="badge-course">夕延長${b.extUnits}枠</span> `;
