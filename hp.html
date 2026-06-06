@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="リピート学童保育 — 岡山・倉敷の安心・安全な放課後の居場所。大高校・御南校・中洲校の3校舎で随時入会受付中。" />
+  <title>リピート学童保育 | 安心・安全・楽しい放課後の居場所【岡山・倉敷】</title>
+
+  <!--
+    =====================================================
+    Supabase DDL — tour_requests テーブル
+    =====================================================
+
+    CREATE TABLE tour_requests (
+      id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+      child_name      text        NOT NULL,
+      parent_name     text        NOT NULL,
+      phone           text        NOT NULL,
+      campus          text        NOT NULL,
+      preferred_date1 date        NOT NULL,
+      preferred_date2 date,
+      message         text,
+      status          text        NOT NULL DEFAULT 'pending',
+      created_at      timestamptz DEFAULT now()
+    );
+
+    -- RLS: フォームからの INSERT は全員許可、SELECT は管理者のみ
+    ALTER TABLE tour_requests ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY "allow_insert" ON tour_requests FOR INSERT WITH CHECK (true);
+    CREATE POLICY "allow_admin"  ON tour_requests FOR SELECT USING (true);
+
+    =====================================================
+  -->
+
+  <style>
+    /* ===== RESET ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN',
+                   'Hiragino Sans', 'Yu Gothic', Meiryo, sans-serif;
+      color: #2D3748;
+      line-height: 1.7;
+      background: #fff;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; height: auto; display: block; }
+    button { font-family: inherit; cursor: pointer; }
+
+    /* ===== DESIGN TOKENS ===== */
+    :root {
+      --g900: #1B5E20;
+      --g700: #2E7D32;
+      --g500: #43A047;
+      --g200: #A5D6A7;
+      --g50:  #E8F5E9;
+      --y400: #FDD835;
+      --y600: #F9A825;
+      --text:        #1A202C;
+      --text-mid:    #4A5568;
+      --text-light:  #718096;
+      --border:      #E2E8F0;
+      --shadow-sm:   0 1px 4px rgba(0,0,0,0.06);
+      --shadow:      0 4px 24px rgba(0,0,0,0.08);
+      --shadow-lg:   0 12px 48px rgba(0,0,0,0.12);
+      --radius:      16px;
+      --radius-sm:   10px;
+    }
+
+    /* ===== LAYOUT ===== */
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+    .section    { padding: 88px 0; }
+
+    .section-eyebrow {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--g50); color: var(--g700);
+      font-size: 12px; font-weight: 700; letter-spacing: .06em;
+      padding: 5px 14px; border-radius: 99px; margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: clamp(26px, 4.5vw, 40px);
+      font-weight: 900; color: var(--g900);
+      line-height: 1.3; margin-bottom: 10px;
+    }
+    .section-sub {
+      font-size: 15px; color: var(--text-light);
+      max-width: 540px; margin: 0 auto 52px;
+    }
+    .ta-c { text-align: center; }
+
+    /* ===== BUTTONS ===== */
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-weight: 800; border: none; border-radius: 99px;
+      transition: all .2s; cursor: pointer; font-size: 15px;
+      padding: 13px 28px;
+    }
+    .btn-yellow {
+      background: var(--y400); color: #2D3748;
+      box-shadow: 0 4px 18px rgba(253,216,53,.45);
+    }
+    .btn-yellow:hover { background: var(--y600); transform: translateY(-2px); box-shadow: 0 6px 26px rgba(253,216,53,.55); }
+    .btn-white-outline {
+      background: transparent; color: #fff;
+      border: 2px solid rgba(255,255,255,.6);
+    }
+    .btn-white-outline:hover { background: rgba(255,255,255,.15); border-color: #fff; }
+    .btn-green {
+      background: var(--g50); color: var(--g700);
+    }
+    .btn-green:hover { background: var(--g200); }
+
+    /* ===== NAVBAR ===== */
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      background: rgba(255,255,255,.96); backdrop-filter: blur(10px);
+      border-bottom: 1px solid transparent;
+      transition: border-color .3s, box-shadow .3s;
+      height: 66px;
+    }
+    .nav.scrolled { border-color: var(--border); box-shadow: 0 2px 16px rgba(0,0,0,.06); }
+    .nav-inner {
+      max-width: 1080px; margin: 0 auto; padding: 0 20px;
+      height: 100%; display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 17px; font-weight: 900; color: var(--g900);
+    }
+    .nav-logo-icon {
+      width: 38px; height: 38px; border-radius: 11px;
+      background: linear-gradient(135deg, var(--g700), var(--g500));
+      display: flex; align-items: center; justify-content: center; font-size: 20px;
+    }
+    .nav-links { display: flex; gap: 4px; list-style: none; }
+    .nav-links a {
+      font-size: 13px; font-weight: 600; color: var(--text-mid);
+      padding: 7px 14px; border-radius: 8px; transition: all .15s;
+    }
+    .nav-links a:hover { background: var(--g50); color: var(--g700); }
+    .nav-cta-btn {
+      background: var(--g700); color: #fff;
+      font-size: 13px; font-weight: 700;
+      padding: 9px 22px; border-radius: 99px; border: none;
+      cursor: pointer; transition: all .2s;
+      white-space: nowrap;
+    }
+    .nav-cta-btn:hover { background: var(--g900); }
+    .hamburger {
+      display: none; flex-direction: column; gap: 5px;
+      cursor: pointer; padding: 6px;
+    }
+    .hamburger span {
+      display: block; width: 24px; height: 2px;
+      background: var(--text); border-radius: 2px; transition: all .3s;
+    }
+    .hamburger.active span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+    .hamburger.active span:nth-child(2) { opacity: 0; }
+    .hamburger.active span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+    /* mobile nav */
+    .mobile-nav {
+      display: none; position: fixed;
+      top: 66px; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,.98); backdrop-filter: blur(12px);
+      z-index: 190; padding: 20px; flex-direction: column; gap: 6px;
+      overflow-y: auto;
+    }
+    .mobile-nav.open { display: flex; }
+    .mobile-nav a {
+      display: block; padding: 14px 18px; border-radius: 12px;
+      font-size: 16px; font-weight: 600; color: var(--text); transition: background .15s;
+    }
+    .mobile-nav a:hover { background: var(--g50); }
+    .mobile-nav .m-cta {
+      background: var(--g700); color: #fff; text-align: center;
+      border-radius: 99px; margin-top: 8px; font-weight: 800;
+    }
+    .mobile-nav .m-cta:hover { background: var(--g900); }
+
+    /* ===== HERO ===== */
+    .hero {
+      min-height: 100svh; padding-top: 66px;
+      background: linear-gradient(140deg, var(--g900) 0%, var(--g700) 50%, var(--g500) 100%);
+      display: flex; align-items: center; overflow: hidden; position: relative;
+    }
+    /* bg decoration */
+    .hero::before {
+      content: ''; position: absolute;
+      width: 700px; height: 700px; border-radius: 50%;
+      background: rgba(255,255,255,.04);
+      top: -250px; right: -200px; pointer-events: none;
+    }
+    .hero::after {
+      content: ''; position: absolute;
+      width: 500px; height: 500px; border-radius: 50%;
+      background: rgba(255,255,255,.04);
+      bottom: -150px; left: -150px; pointer-events: none;
+    }
+    .hero-inner {
+      max-width: 1080px; margin: 0 auto; padding: 64px 20px;
+      display: grid; grid-template-columns: 1.1fr 1fr; gap: 64px; align-items: center;
+      position: relative; z-index: 1;
+    }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,.15); backdrop-filter: blur(6px);
+      color: #fff; font-size: 13px; font-weight: 600;
+      padding: 7px 16px; border-radius: 99px;
+      margin-bottom: 22px; border: 1px solid rgba(255,255,255,.2);
+    }
+    .hero-title {
+      font-size: clamp(30px, 5.5vw, 56px); font-weight: 900; color: #fff;
+      line-height: 1.25; margin-bottom: 22px;
+    }
+    .hero-title em { font-style: normal; color: var(--y400); }
+    .hero-desc {
+      color: rgba(255,255,255,.85); font-size: clamp(14px, 2vw, 16px);
+      line-height: 1.9; margin-bottom: 36px;
+    }
+    .hero-btns { display: flex; gap: 12px; flex-wrap: wrap; }
+    .hero-btns .btn { font-size: 15px; }
+
+    /* hero right panel */
+    .hero-panel { display: flex; flex-direction: column; gap: 14px; }
+    .hero-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .hero-stat {
+      background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.2);
+      backdrop-filter: blur(8px); border-radius: 14px; padding: 18px 12px; text-align: center;
+    }
+    .hero-stat-num { font-size: 26px; font-weight: 900; color: var(--y400); line-height: 1; }
+    .hero-stat-label { font-size: 11px; color: rgba(255,255,255,.8); margin-top: 5px; }
+    .hero-notice {
+      background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.2);
+      backdrop-filter: blur(8px); border-radius: 14px; padding: 16px 18px;
+      display: flex; align-items: flex-start; gap: 12px;
+      color: rgba(255,255,255,.9); font-size: 13px; line-height: 1.7;
+    }
+    .hero-notice-icon { font-size: 20px; flex-shrink: 0; }
+
+    /* ===== RIBBON ===== */
+    .ribbon {
+      background: var(--g50); border-top: 1px solid var(--g200); border-bottom: 1px solid var(--g200);
+      padding: 18px 0; overflow: hidden;
+    }
+    .ribbon-inner {
+      display: flex; gap: 48px; white-space: nowrap;
+      font-size: 13px; font-weight: 700; color: var(--g700); flex-wrap: wrap;
+    }
+    .ribbon-inner span::before { content: '✅ '; }
+
+    /* ===== FEATURES ===== */
+    .features { background: #fff; }
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 24px;
+    }
+    .feature-card {
+      background: #FAFAFA; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 30px 24px;
+      transition: transform .2s, box-shadow .2s, background .2s;
+    }
+    .feature-card:hover {
+      transform: translateY(-5px); box-shadow: var(--shadow);
+      background: #fff;
+    }
+    .feature-emoji {
+      width: 52px; height: 52px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center; font-size: 26px;
+      margin-bottom: 16px;
+    }
+    .f-green  { background: var(--g50); }
+    .f-yellow { background: #FFFDE7; }
+    .f-blue   { background: #E3F2FD; }
+    .f-orange { background: #FFF3E0; }
+    .feature-card h3 { font-size: 16px; font-weight: 800; color: var(--g900); margin-bottom: 8px; }
+    .feature-card p  { font-size: 13px; color: var(--text-light); line-height: 1.75; }
+
+    /* ===== CAMPUSES ===== */
+    .campuses { background: var(--g50); }
+    .campus-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px;
+    }
+    .campus-card {
+      background: #fff; border-radius: var(--radius); overflow: hidden;
+      box-shadow: var(--shadow-sm); border: 1px solid var(--border);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .campus-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
+    .campus-thumb {
+      height: 148px; display: flex; align-items: center; justify-content: center;
+      font-size: 52px; position: relative;
+    }
+    .campus-thumb.t-green  { background: linear-gradient(135deg, #1B5E20, #43A047); }
+    .campus-thumb.t-blue   { background: linear-gradient(135deg, #0D47A1, #42A5F5); }
+    .campus-thumb.t-orange { background: linear-gradient(135deg, #BF360C, #FFA726); }
+    .campus-label {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(255,255,255,.22); backdrop-filter: blur(6px);
+      color: #fff; font-size: 11px; font-weight: 700;
+      padding: 3px 10px; border-radius: 99px; border: 1px solid rgba(255,255,255,.3);
+    }
+    .campus-body { padding: 24px; }
+    .campus-body h3 { font-size: 20px; font-weight: 800; margin-bottom: 14px; }
+    .campus-meta { list-style: none; display: flex; flex-direction: column; gap: 9px; margin-bottom: 18px; }
+    .campus-meta li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text-mid); }
+    .campus-meta li .mi { flex-shrink: 0; }
+    .campus-tel {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 20px; font-weight: 900; color: var(--g700);
+      margin-bottom: 16px; text-decoration: none; transition: color .2s;
+    }
+    .campus-tel:hover { color: var(--g900); }
+    .campus-foot { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    /* ===== PRICING ===== */
+    .pricing { background: #fff; }
+    .pricing-card {
+      max-width: 720px; margin: 0 auto;
+      background: #fff; border-radius: var(--radius); overflow: hidden;
+      box-shadow: var(--shadow); border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .pricing-table { width: 100%; border-collapse: collapse; }
+    .pricing-table thead th {
+      background: var(--g700); color: #fff;
+      font-size: 13px; font-weight: 700; padding: 13px 20px; text-align: left;
+    }
+    .pricing-table thead th:last-child { text-align: right; }
+    .pricing-table tbody tr:nth-child(odd) { background: var(--g50); }
+    .pricing-table tbody td {
+      padding: 14px 20px; font-size: 14px; border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .pricing-table tbody tr:last-child td { border-bottom: none; }
+    .pricing-table tbody td:last-child {
+      text-align: right; font-weight: 800; font-size: 17px; color: var(--g700);
+    }
+    .pricing-note {
+      max-width: 720px; margin: 0 auto;
+      font-size: 12px; color: var(--text-light); text-align: center; line-height: 2;
+    }
+
+    /* ===== FAQ ===== */
+    .faq { background: var(--g50); }
+    .faq-list { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+    .faq-item {
+      background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      overflow: hidden; transition: box-shadow .2s;
+    }
+    .faq-item.open { box-shadow: var(--shadow); border-color: var(--g200); }
+    .faq-q {
+      display: flex; align-items: center; gap: 12px; padding: 17px 20px;
+      cursor: pointer; user-select: none; transition: background .15s;
+    }
+    .faq-q:hover { background: var(--g50); }
+    .faq-item.open .faq-q { background: var(--g50); }
+    .faq-q-badge {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      background: var(--g700); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 900;
+    }
+    .faq-q-text { flex: 1; font-size: 15px; font-weight: 700; color: var(--text); }
+    .faq-arrow { font-size: 14px; color: var(--g500); transition: transform .3s; flex-shrink: 0; }
+    .faq-item.open .faq-arrow { transform: rotate(180deg); }
+    .faq-a { max-height: 0; overflow: hidden; transition: max-height .36s ease; }
+    .faq-item.open .faq-a { max-height: 600px; }
+    .faq-a-inner {
+      padding: 14px 20px 20px 60px;
+      font-size: 14px; color: var(--text-mid); line-height: 1.85;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ===== TOUR FORM ===== */
+    .tour {
+      background: linear-gradient(145deg, var(--g900) 0%, var(--g700) 55%, var(--g500) 100%);
+      position: relative; overflow: hidden;
+    }
+    .tour::before {
+      content: ''; position: absolute; top: -200px; right: -200px;
+      width: 600px; height: 600px; border-radius: 50%;
+      background: rgba(255,255,255,.04); pointer-events: none;
+    }
+    .tour .section-title { color: #fff; }
+    .tour .section-sub   { color: rgba(255,255,255,.75); }
+    .tour .section-eyebrow { background: rgba(255,255,255,.18); color: #fff; }
+
+    .form-card {
+      max-width: 640px; margin: 0 auto;
+      background: #fff; border-radius: 24px; padding: 40px;
+      box-shadow: 0 24px 72px rgba(0,0,0,.22);
+      position: relative; z-index: 1;
+    }
+    .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { margin-bottom: 18px; }
+    .form-label {
+      display: block; font-size: 13px; font-weight: 700;
+      color: var(--text); margin-bottom: 6px;
+    }
+    .form-label .req { color: #E53E3E; margin-left: 4px; font-size: 11px; }
+    .f-ctrl {
+      width: 100%; padding: 11px 14px;
+      border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 15px; font-family: inherit; color: var(--text);
+      background: #FAFAFA; outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      -webkit-appearance: none;
+    }
+    .f-ctrl:focus { border-color: var(--g500); background: #fff; box-shadow: 0 0 0 3px rgba(67,160,71,.12); }
+    .f-ctrl.err { border-color: #E53E3E; }
+    select.f-ctrl {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23718096' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 13px center; padding-right: 36px;
+    }
+    textarea.f-ctrl { resize: vertical; min-height: 100px; }
+    .f-err { font-size: 12px; color: #E53E3E; margin-top: 4px; display: block; }
+    .f-submit {
+      width: 100%; padding: 16px;
+      background: var(--g500); color: #fff;
+      font-size: 16px; font-weight: 800; border: none;
+      border-radius: 99px; cursor: pointer; font-family: inherit;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: all .2s; margin-top: 6px;
+    }
+    .f-submit:hover { background: var(--g700); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(46,125,50,.35); }
+    .f-submit:disabled { background: #A0AEC0; transform: none; box-shadow: none; cursor: not-allowed; }
+    .form-success {
+      display: none; text-align: center; padding: 36px 20px;
+    }
+    .success-icon {
+      width: 76px; height: 76px; border-radius: 50%;
+      background: var(--g50); display: flex; align-items: center; justify-content: center;
+      font-size: 38px; margin: 0 auto 20px;
+    }
+    .form-success h3 { font-size: 22px; font-weight: 900; color: var(--g900); margin-bottom: 10px; }
+    .form-success p  { font-size: 14px; color: var(--text-mid); line-height: 1.85; }
+
+    /* ===== FOOTER ===== */
+    .footer { background: #111827; color: rgba(255,255,255,.75); padding: 64px 0 32px; }
+    .footer-grid {
+      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px; margin-bottom: 52px;
+    }
+    .footer-brand-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 17px; font-weight: 900; color: #fff; margin-bottom: 14px;
+    }
+    .footer-brand-logo .icon {
+      width: 34px; height: 34px; border-radius: 9px;
+      background: var(--g700); display: flex; align-items: center; justify-content: center; font-size: 17px;
+    }
+    .footer-brand p { font-size: 13px; color: rgba(255,255,255,.5); line-height: 1.8; }
+    .footer-col h4 {
+      font-size: 12px; font-weight: 700; color: rgba(255,255,255,.4);
+      letter-spacing: .08em; text-transform: uppercase; margin-bottom: 16px;
+    }
+    .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+    .footer-col ul li { font-size: 13px; line-height: 1.5; }
+    .footer-col ul li a { color: rgba(255,255,255,.65); transition: color .2s; }
+    .footer-col ul li a:hover { color: var(--g200); }
+    .footer-divider { border: none; border-top: 1px solid rgba(255,255,255,.08); margin-bottom: 28px; }
+    .footer-bottom {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+      font-size: 12px; color: rgba(255,255,255,.35);
+    }
+    .footer-bottom a { color: rgba(255,255,255,.35); transition: color .2s; }
+    .footer-bottom a:hover { color: var(--g200); }
+
+    /* ===== SCROLL TOP ===== */
+    .back-top {
+      position: fixed; bottom: 24px; right: 24px; z-index: 180;
+      width: 44px; height: 44px; border-radius: 50%;
+      background: var(--g700); color: #fff; border: none;
+      font-size: 18px; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,.18);
+      opacity: 0; transform: translateY(10px); transition: all .3s; cursor: pointer;
+    }
+    .back-top.show { opacity: 1; transform: translateY(0); }
+    .back-top:hover { background: var(--g900); }
+
+    /* ===== FADE IN ===== */
+    .reveal { opacity: 0; transform: translateY(22px); transition: opacity .5s ease, transform .5s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 900px) {
+      .hero-inner { grid-template-columns: 1fr; gap: 44px; padding: 56px 20px; }
+      .hero-panel  { order: -1; }
+      .footer-grid { grid-template-columns: 1fr 1fr; }
+      .footer-brand { grid-column: 1 / -1; }
+    }
+    @media (max-width: 680px) {
+      .section { padding: 60px 0; }
+      .nav-links, .nav-cta-btn { display: none; }
+      .hamburger { display: flex; }
+      .hero-btns  { flex-direction: column; }
+      .hero-btns .btn { justify-content: center; }
+      .form-row-2 { grid-template-columns: 1fr; }
+      .form-card  { padding: 28px 18px; }
+      .footer-grid { grid-template-columns: 1fr; }
+      .footer-brand { grid-column: auto; }
+    }
+    @media (max-width: 400px) {
+      .hero-stats { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <span class="nav-logo-icon">🏫</span>
+      <span>リピート学童保育</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">特徴</a></li>
+      <li><a href="#campuses">校舎案内</a></li>
+      <li><a href="#pricing">料金</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+    <button class="nav-cta-btn" onclick="document.getElementById('tour').scrollIntoView({behavior:'smooth'})">
+      🗓 見学予約
+    </button>
+    <div class="hamburger" id="hamburger" onclick="toggleMenu()">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+</nav>
+
+<!-- mobile nav -->
+<div class="mobile-nav" id="mobileNav">
+  <a href="#features"  onclick="closeMenu()">✅ 選ばれる理由</a>
+  <a href="#campuses"  onclick="closeMenu()">🏫 校舎案内</a>
+  <a href="#pricing"   onclick="closeMenu()">💴 料金案内</a>
+  <a href="#faq"       onclick="closeMenu()">💬 よくある質問</a>
+  <a href="#tour"      onclick="closeMenu()" class="m-cta">🗓 無料見学を予約する</a>
+</div>
+
+
+<!-- ===== HERO ===== -->
+<section class="hero" id="home">
+  <div class="hero-inner">
+
+    <div class="hero-content">
+      <div class="hero-eyebrow">🌱 岡山・倉敷エリアの学童保育</div>
+      <h1 class="hero-title">
+        放課後の<br>
+        <em>安心・安全・楽しい</em><br>
+        居場所、ここにあります。
+      </h1>
+      <p class="hero-desc">
+        リピート学童保育は、働くお父さん・お母さんを全力でサポート。<br>
+        学習サポートつきで、子どもたちの放課後を豊かにします。
+      </p>
+      <div class="hero-btns">
+        <a href="#tour"      class="btn btn-yellow">🗓 無料見学を予約する</a>
+        <a href="#campuses"  class="btn btn-white-outline">校舎を見る →</a>
+      </div>
+    </div>
+
+    <div class="hero-panel">
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <div class="hero-stat-num">3</div>
+          <div class="hero-stat-label">校舎展開中</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-num">小1〜6</div>
+          <div class="hero-stat-label">全学年対応</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-num">18:30</div>
+          <div class="hero-stat-label">延長保育対応</div>
+        </div>
+      </div>
+      <div class="hero-notice">
+        <span class="hero-notice-icon">📋</span>
+        <span><strong style="color:#fff;">随時入会受付中！</strong><br>定員に限りがございます。お気軽にご見学・お問い合わせください。</span>
+      </div>
+      <div class="hero-notice">
+        <span class="hero-notice-icon">🚌</span>
+        <span><strong style="color:#fff;">送迎サービス対応（校舎による）</strong><br>学校から施設まで送迎できます。お気軽にご相談ください。</span>
+      </div>
+      <div class="hero-notice">
+        <span class="hero-notice-icon">📚</span>
+        <span><strong style="color:#fff;">学習サポート付き</strong><br>宿題・自主学習をスタッフが毎日サポートします。</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ===== RIBBON ===== -->
+<div class="ribbon">
+  <div class="container">
+    <div class="ribbon-inner">
+      <span>宿題・学習サポートあり</span>
+      <span>延長保育 18:30まで対応</span>
+      <span>送迎サービス（要相談）</span>
+      <span>おやつ提供</span>
+      <span>長期休暇中も保育</span>
+      <span>全学年（小1〜6）対応</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== FEATURES ===== -->
+<section class="section features" id="features">
+  <div class="container ta-c">
+    <div class="section-eyebrow">🌟 選ばれる理由</div>
+    <h2 class="section-title">リピートが選ばれる<br>4つの理由</h2>
+    <p class="section-sub">保護者が安心して働けるよう、子どもたちが毎日笑顔で通えるよう設計しています</p>
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <div class="feature-emoji f-green">🛡️</div>
+        <h3>安心・安全な環境</h3>
+        <p>スタッフが常駐し、お子さまの安全を最優先。緊急連絡体制や安全管理マニュアルを整備し、保護者が仕事に集中できる環境をご提供します。</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-emoji f-yellow">📚</div>
+        <h3>毎日の学習サポート</h3>
+        <p>宿題・自主学習をスタッフが丁寧にサポート。学習習慣が自然と身につきます。答えを教えるのではなく「考える力」を育てます。</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-emoji f-blue">🕕</div>
+        <h3>柔軟な延長保育</h3>
+        <p>18:30まで延長保育に対応（応相談）。急なお迎え変更やお仕事の都合に合わせた柔軟な対応が可能です。</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-emoji f-orange">🍱</div>
+        <h3>おやつ・弁当サービス</h3>
+        <p>毎日のおやつ提供はもちろん、長期休暇中のお弁当注文にも対応（校舎による）。栄養面も考慮したサービスをご提供します。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ===== CAMPUSES ===== -->
+<section class="section campuses" id="campuses">
+  <div class="container ta-c">
+    <div class="section-eyebrow">🏫 校舎案内</div>
+    <h2 class="section-title">3つの校舎で<br>お子さまをお待ちしています</h2>
+    <p class="section-sub">岡山市・倉敷市エリアに3校舎展開。各校舎の詳細はお気軽にお問い合わせください</p>
+    <div class="campus-grid">
+
+      <!-- 大高校 -->
+      <div class="campus-card reveal">
+        <div class="campus-thumb t-green">
+          🌿
+          <span class="campus-label">倉敷市</span>
+        </div>
+        <div class="campus-body">
+          <h3>大高校</h3>
+          <ul class="campus-meta">
+            <li><span class="mi">📍</span><span>倉敷市西中新田24-1</span></li>
+            <li><span class="mi">🕐</span><span>放課後〜18:30（延長応相談）</span></li>
+            <li><span class="mi">👶</span><span>小学1年生〜6年生</span></li>
+            <li><span class="mi">🚌</span><span>送迎対応（要相談）</span></li>
+          </ul>
+          <a href="tel:086-431-2058" class="campus-tel">📞 086-431-2058</a>
+          <div class="campus-foot">
+            <button class="btn btn-green" onclick="selectCampus('大高校')">🗓 見学予約</button>
+            <a href="https://maps.google.com/?q=倉敷市西中新田24-1" target="_blank" class="btn btn-green">📍 地図</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 御南校 -->
+      <div class="campus-card reveal">
+        <div class="campus-thumb t-blue">
+          🌸
+          <span class="campus-label">岡山市</span>
+        </div>
+        <div class="campus-body">
+          <h3>御南校</h3>
+          <ul class="campus-meta">
+            <li><span class="mi">📍</span><span>岡山市北区今保237-11</span></li>
+            <li><span class="mi">🕐</span><span>放課後〜18:30（延長応相談）</span></li>
+            <li><span class="mi">👶</span><span>小学1年生〜6年生</span></li>
+            <li><span class="mi">🚌</span><span>送迎対応（要相談）</span></li>
+          </ul>
+          <a href="tel:080-6956-9913" class="campus-tel">📞 080-6956-9913</a>
+          <div class="campus-foot">
+            <button class="btn btn-green" onclick="selectCampus('御南校')">🗓 見学予約</button>
+            <a href="https://maps.google.com/?q=岡山市北区今保237-11" target="_blank" class="btn btn-green">📍 地図</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 中洲校 -->
+      <div class="campus-card reveal">
+        <div class="campus-thumb t-orange">
+          🌻
+          <span class="campus-label">倉敷市</span>
+        </div>
+        <div class="campus-body">
+          <h3>中洲校</h3>
+          <ul class="campus-meta">
+            <li><span class="mi">📍</span><span>倉敷市水江1594-77</span></li>
+            <li><span class="mi">🕐</span><span>放課後〜18:30（延長応相談）</span></li>
+            <li><span class="mi">👶</span><span>小学1年生〜6年生</span></li>
+            <li><span class="mi">🚌</span><span>送迎対応（要相談）</span></li>
+          </ul>
+          <a href="tel:086-465-2629" class="campus-tel">📞 086-465-2629</a>
+          <div class="campus-foot">
+            <button class="btn btn-green" onclick="selectCampus('中洲校')">🗓 見学予約</button>
+            <a href="https://maps.google.com/?q=倉敷市水江1594-77" target="_blank" class="btn btn-green">📍 地図</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ===== PRICING ===== -->
+<section class="section pricing" id="pricing">
+  <div class="container ta-c">
+    <div class="section-eyebrow">💴 料金案内</div>
+    <h2 class="section-title">シンプルな料金体系</h2>
+    <p class="section-sub">ご不明な点はお気軽にお問い合わせください。個別のご相談にも対応します</p>
+
+    <div class="pricing-card reveal">
+      <table class="pricing-table">
+        <thead>
+          <tr>
+            <th>コース名</th>
+            <th>対象学年</th>
+            <th>月額料金（税込）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>月極全日コース（低学年）</strong><br><small style="color:#718096;">平日毎日通い放題</small></td>
+            <td>小学1〜3年生</td>
+            <td>¥14,300</td>
+          </tr>
+          <tr>
+            <td><strong>月極全日コース（高学年）</strong><br><small style="color:#718096;">平日毎日通い放題</small></td>
+            <td>小学4〜6年生</td>
+            <td>¥12,100</td>
+          </tr>
+          <tr>
+            <td><strong>12日間コース</strong><br><small style="color:#718096;">年度内12日まで利用可能</small></td>
+            <td>全学年</td>
+            <td>¥11,000</td>
+          </tr>
+          <tr>
+            <td><strong>スポット利用</strong><br><small style="color:#718096;">1日単位での利用</small></td>
+            <td>全学年</td>
+            <td>応相談</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="pricing-note reveal">
+      ※ 上記は基本料金です。延長保育・おやつ・弁当・送迎は別途費用が発生する場合があります。<br>
+      ※ 年会費・入会金については各校舎にお問い合わせください。<br>
+      ※ 夏休み・冬休み・春休みなど長期休暇中は特別保育料が別途かかります。<br>
+      ※ 料金は予告なく変更になる場合があります。最新情報は直接校舎にご確認ください。
+    </p>
+  </div>
+</section>
+
+
+<!-- ===== FAQ ===== -->
+<section class="section faq" id="faq">
+  <div class="container ta-c">
+    <div class="section-eyebrow">💬 よくある質問</div>
+    <h2 class="section-title">よくある質問</h2>
+    <p class="section-sub">入会前の疑問にお答えします。解決しない場合はお気軽にご連絡ください</p>
+    <div class="faq-list">
+
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <div class="faq-q-badge">Q</div>
+          <div class="faq-q-text">入会はいつでもできますか？</div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-a"><div class="faq-a-inner">
+          随時入会を受け付けておりますが、各校舎に定員がございます。お早めにお問い合わせいただくことをおすすめします。まずは無料見学にお越しいただき、施設の雰囲気をご確認ください。
+        </div></div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <div class="faq-q-badge">Q</div>
+          <div class="faq-q-text">送迎サービスはありますか？</div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-a"><div class="faq-a-inner">
+          校舎・対象エリアによって対応が異なります。学校からのお迎えに対応している校舎もございますので、お近くの校舎に直接お問い合わせください。
+        </div></div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <div class="faq-q-badge">Q</div>
+          <div class="faq-q-text">夏休みなど長期休暇中も預かってもらえますか？</div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-a"><div class="faq-a-inner">
+          はい、夏休み・冬休み・春休みなどの長期休暇中も対応しています。通常より早い時間からの保育にも対応できる場合があります（特別保育料が別途かかります）。詳細は各校舎にお問い合わせください。
+        </div></div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <div class="faq-q-badge">Q</div>
+          <div class="faq-q-text">宿題・勉強は見てもらえますか？</div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-a"><div class="faq-a-inner">
+          はい、スタッフが毎日宿題・自主学習のサポートをいたします。答えを教えるのではなく、お子さまが自分で考える力をつけられるよう丁寧にサポートします。学習習慣の定着を大切にしています。
+        </div></div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <div class="faq-q-badge">Q</div>
+          <div class="faq-q-text">急な欠席・キャンセルはできますか？</div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-a"><div class="faq-a-inner">
+          お子さまの体調不良などの際は当日でもご連絡ください。月極コースの場合、欠席分の返金はありませんが、学校行事などやむを得ない場合はご相談ください。
+        </div></div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <div class="faq-q-badge">Q</div>
+          <div class="faq-q-text">見学は事前予約が必要ですか？費用はかかりますか？</div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-a"><div class="faq-a-inner">
+          見学は事前にご予約をお願いしております。このページ下部の「無料見学予約フォーム」からお申し込みいただくか、直接電話でご連絡ください。見学は完全無料です。お子さまとご一緒にお越しください。
+        </div></div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          <div class="faq-q-badge">Q</div>
+          <div class="faq-q-text">12日間コースとはどんなコースですか？</div>
+          <span class="faq-arrow">▼</span>
+        </div>
+        <div class="faq-a"><div class="faq-a-inner">
+          年度内（4月〜翌3月）に12日まで利用できるコースです。週に1〜2回だけ利用したい方や、習い事と組み合わせたい方に人気です。12日を超えてご利用の場合はスポット料金が適用されます。
+        </div></div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ===== TOUR FORM ===== -->
+<section class="section tour" id="tour">
+  <div class="container ta-c">
+    <div class="section-eyebrow">🗓 無料見学予約</div>
+    <h2 class="section-title">気軽に見学へどうぞ</h2>
+    <p class="section-sub">フォームに入力して送信するだけ。2営業日以内に担当者よりご連絡いたします</p>
+
+    <div class="form-card">
+      <!-- フォーム本体 -->
+      <div id="formBody">
+        <form id="tourForm" novalidate autocomplete="on">
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="child_name">お子さまのお名前<span class="req">必須</span></label>
+              <input type="text" id="child_name" class="f-ctrl" placeholder="山田 太郎" autocomplete="off" />
+              <span class="f-err" id="e_child_name"></span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="parent_name">保護者のお名前<span class="req">必須</span></label>
+              <input type="text" id="parent_name" class="f-ctrl" placeholder="山田 花子" autocomplete="name" />
+              <span class="f-err" id="e_parent_name"></span>
+            </div>
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="phone">電話番号<span class="req">必須</span></label>
+              <input type="tel" id="phone" class="f-ctrl" placeholder="090-1234-5678" autocomplete="tel" inputmode="tel" />
+              <span class="f-err" id="e_phone"></span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="campus">希望校舎<span class="req">必須</span></label>
+              <select id="campus" class="f-ctrl">
+                <option value="">選択してください</option>
+                <option value="大高校">大高校（倉敷市西中新田）</option>
+                <option value="御南校">御南校（岡山市北区今保）</option>
+                <option value="中洲校">中洲校（倉敷市水江）</option>
+              </select>
+              <span class="f-err" id="e_campus"></span>
+            </div>
+          </div>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label" for="preferred_date1">ご希望日・第1候補<span class="req">必須</span></label>
+              <input type="date" id="preferred_date1" class="f-ctrl" />
+              <span class="f-err" id="e_preferred_date1"></span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="preferred_date2">ご希望日・第2候補</label>
+              <input type="date" id="preferred_date2" class="f-ctrl" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:24px;">
+            <label class="form-label" for="message">ご質問・ご要望など（任意）</label>
+            <textarea id="message" class="f-ctrl" placeholder="気になること、聞いてみたいことなど何でもどうぞ。&#10;例：学年、習い事との兼ね合い、送迎の希望など"></textarea>
+          </div>
+          <button type="submit" class="f-submit" id="submitBtn">
+            <span>🗓</span> 見学予約を送信する
+          </button>
+        </form>
+      </div>
+
+      <!-- 送信完了メッセージ -->
+      <div class="form-success" id="formSuccess">
+        <div class="success-icon">✅</div>
+        <h3>ご予約ありがとうございます！</h3>
+        <p>
+          見学のご予約を受け付けました。<br>
+          <strong>2営業日以内に担当者よりお電話またはご連絡いたします。</strong><br><br>
+          しばらくお待ちいただけますよう、<br>よろしくお願いいたします。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ===== FOOTER ===== -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="footer-brand-logo">
+          <span class="icon">🏫</span>
+          <span>リピート学童保育</span>
+        </div>
+        <p>
+          働くお父さん・お母さんを全力でサポート。<br>
+          安心・安全・楽しい放課後の居場所として<br>
+          岡山・倉敷エリアで展開しています。
+        </p>
+      </div>
+      <div class="footer-col">
+        <h4>大高校</h4>
+        <ul>
+          <li>倉敷市西中新田24-1</li>
+          <li><a href="tel:086-431-2058">📞 086-431-2058</a></li>
+          <li><a href="https://maps.google.com/?q=倉敷市西中新田24-1" target="_blank" rel="noopener">📍 地図を見る</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>御南校</h4>
+        <ul>
+          <li>岡山市北区今保237-11</li>
+          <li><a href="tel:080-6956-9913">📞 080-6956-9913</a></li>
+          <li><a href="https://maps.google.com/?q=岡山市北区今保237-11" target="_blank" rel="noopener">📍 地図を見る</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>中洲校</h4>
+        <ul>
+          <li>倉敷市水江1594-77</li>
+          <li><a href="tel:086-465-2629">📞 086-465-2629</a></li>
+          <li><a href="https://maps.google.com/?q=倉敷市水江1594-77" target="_blank" rel="noopener">📍 地図を見る</a></li>
+        </ul>
+      </div>
+    </div>
+    <hr class="footer-divider" />
+    <div class="footer-bottom">
+      <p>© 2025 リピート学童保育 All rights reserved.</p>
+      <p><a href="https://repeat-ed.jp" target="_blank" rel="noopener">repeat-ed.jp</a></p>
+    </div>
+  </div>
+</footer>
+
+<!-- scroll to top -->
+<button class="back-top" id="backTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="ページトップへ">↑</button>
+
+
+<!-- ===== SUPABASE CDN ===== -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+  /* =========================================================
+   * Supabase 設定
+   * 以下の2行を実際の値に書き換えてください
+   * ========================================================= */
+  const SUPABASE_URL      = 'https://shrimblcqonwxdgddgoy.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_Qw1J2lEcufd2MNQjyqHxEg_2ZM_Tdmu';
+
+  const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  /* ===== NAVBAR scroll ===== */
+  const nav = document.getElementById('nav');
+  const backTop = document.getElementById('backTop');
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 30);
+    backTop.classList.toggle('show', window.scrollY > 400);
+  }, { passive: true });
+
+  /* ===== Hamburger menu ===== */
+  function toggleMenu() {
+    const hb = document.getElementById('hamburger');
+    const mn = document.getElementById('mobileNav');
+    hb.classList.toggle('active');
+    mn.classList.toggle('open');
+    document.body.style.overflow = mn.classList.contains('open') ? 'hidden' : '';
+  }
+  function closeMenu() {
+    document.getElementById('hamburger').classList.remove('active');
+    document.getElementById('mobileNav').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  /* ===== FAQ accordion ===== */
+  function toggleFaq(qEl) {
+    const item = qEl.closest('.faq-item');
+    const isOpen = item.classList.contains('open');
+    document.querySelectorAll('.faq-item.open').forEach(el => el.classList.remove('open'));
+    if (!isOpen) item.classList.add('open');
+  }
+
+  /* ===== Scroll reveal ===== */
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        setTimeout(() => entry.target.classList.add('in'), i * 70);
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12 });
+  document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+  /* ===== Date min = today ===== */
+  const todayStr = new Date().toISOString().split('T')[0];
+  document.getElementById('preferred_date1').min = todayStr;
+  document.getElementById('preferred_date2').min = todayStr;
+
+  /* ===== Campus pre-select from campus card buttons ===== */
+  function selectCampus(campus) {
+    document.getElementById('campus').value = campus;
+    document.getElementById('tour').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  /* ===== Form validation ===== */
+  const REQUIRED = [
+    { id: 'child_name',      label: 'お子さまのお名前' },
+    { id: 'parent_name',     label: '保護者のお名前' },
+    { id: 'phone',           label: '電話番号' },
+    { id: 'campus',          label: '希望校舎' },
+    { id: 'preferred_date1', label: 'ご希望日・第1候補' },
+  ];
+
+  function clearError(id) {
+    document.getElementById(id).classList.remove('err');
+    const e = document.getElementById('e_' + id);
+    if (e) e.textContent = '';
+  }
+  function setError(id, msg) {
+    document.getElementById(id).classList.add('err');
+    const e = document.getElementById('e_' + id);
+    if (e) e.textContent = msg;
+  }
+
+  function validate() {
+    let ok = true;
+    REQUIRED.forEach(f => {
+      const val = (document.getElementById(f.id).value || '').trim();
+      if (!val) { setError(f.id, f.label + 'を入力してください'); ok = false; }
+      else clearError(f.id);
+    });
+    // phone format
+    const p = document.getElementById('phone').value.trim();
+    if (p && !/^[\d\-\+\(\)\s]{10,15}$/.test(p)) {
+      setError('phone', '正しい電話番号を入力してください（例: 090-1234-5678）');
+      ok = false;
+    }
+    // date: d2 must be after d1 (if set)
+    const d1 = document.getElementById('preferred_date1').value;
+    const d2 = document.getElementById('preferred_date2').value;
+    if (d1 && d2 && d2 <= d1) {
+      document.getElementById('preferred_date2').classList.add('err');
+      ok = false;
+    }
+    return ok;
+  }
+
+  // live clear errors
+  document.querySelectorAll('.f-ctrl').forEach(el => {
+    el.addEventListener('input', () => clearError(el.id));
+    el.addEventListener('change', () => clearError(el.id));
+  });
+
+  /* ===== Form submit ===== */
+  document.getElementById('tourForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!validate()) {
+      // scroll to first error
+      const firstErr = document.querySelector('.f-ctrl.err');
+      if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span> 送信中...';
+
+    const payload = {
+      child_name:      document.getElementById('child_name').value.trim(),
+      parent_name:     document.getElementById('parent_name').value.trim(),
+      phone:           document.getElementById('phone').value.trim(),
+      campus:          document.getElementById('campus').value,
+      preferred_date1: document.getElementById('preferred_date1').value,
+      preferred_date2: document.getElementById('preferred_date2').value || null,
+      message:         document.getElementById('message').value.trim() || null,
+      status:          'pending',
+    };
+
+    try {
+      if (_sb) {
+        /* 本番: Supabase に保存 */
+        const { error } = await _sb.from('tour_requests').insert(payload);
+        if (error) throw error;
+      } else {
+        /* Supabase 未設定時: デモ動作（1秒待機） */
+        await new Promise(r => setTimeout(r, 1000));
+        console.log('[Demo] 見学予約データ:', payload);
+      }
+      // 成功 → 完了画面を表示
+      document.getElementById('formBody').style.display    = 'none';
+      document.getElementById('formSuccess').style.display = 'block';
+      document.getElementById('formSuccess').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (err) {
+      alert(
+        '送信中にエラーが発生しました。\nお手数ですが直接お電話にてご連絡ください。\n\nエラー詳細: ' + err.message
+      );
+      btn.disabled = false;
+      btn.innerHTML = '<span>🗓</span> 見学予約を送信する';
+    }
+  });
+</script>
+</body>
+</html>
