@@ -1203,6 +1203,12 @@
       color: #92400E;
     }
 
+    .alert-danger {
+      background: #FEE2E2;
+      color: #991B1B;
+      border-left: 4px solid #EF4444;
+    }
+
     /* Tabs */
     .tabs {
       display: flex;
@@ -2150,6 +2156,8 @@
 
           <!-- TAB 1: CALCULATION -->
           <div id="payroll-tab-calc" class="payroll-tab-content active">
+            <!-- 下校時刻警告バナー -->
+            <div id="shiftWarningBanner" class="alert alert-danger" style="display:none;"></div>
             <div class="controls-bar">
               <div>
                 <label class="form-label">年月</label>
@@ -2383,6 +2391,32 @@
                   <!-- Rendered via JS -->
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- DISMISSAL TIMES ADMIN -->
+        <div class="page" id="page-dismissal">
+          <div class="card">
+            <div class="card-header" style="flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+              <span class="card-title">
+                <i class="ph ph-bell-ringing" style="vertical-align:middle;margin-right:4px;"></i>
+                下校時刻設定
+              </span>
+              <button class="btn btn-primary" onclick="openDismissalModal()">
+                <i class="ph ph-plus" style="margin-right:4px;"></i> 追加
+              </button>
+            </div>
+            <p style="font-size:12px;color:var(--text-light);margin-bottom:12px;">
+              ※ 各学校・曜日ごとの下校時刻を登録します。シフト入力時に出勤が下校より遅い場合、警告が表示されます。
+            </p>
+            <!-- ローディング -->
+            <div id="dismissalLoading" style="display:none;text-align:center;padding:20px;color:var(--text-light);">
+              <i class="ph ph-spinner" style="font-size:20px;"></i> 読み込み中...
+            </div>
+            <!-- テーブル -->
+            <div class="table-wrap" id="dismissalTableWrap">
+              <p style="text-align:center;color:var(--text-light);padding:20px;">読み込み中...</p>
             </div>
           </div>
         </div>
@@ -2719,6 +2753,7 @@
       else if (pageId === 'page-manuals-staff') renderManualsStaff();
       else if (pageId === 'page-roster-staff') renderRosterStaff();
       else if (pageId === 'page-dashboard') renderDashboard();
+      else if (pageId === 'page-dismissal') renderDismissalPage();
     }
 
     // ===== Supabase データ層 =====
@@ -2851,7 +2886,7 @@
 
     // アプリ起動時にSupabaseからデータ初期ロード
     async function sbInitLoad() {
-      await Promise.all([sbLoadStudents(), sbLoadStaffAccounts(), sbLoadManuals()]);
+      await Promise.all([sbLoadStudents(), sbLoadStaffAccounts(), sbLoadManuals(), sbLoadDismissalTimes()]);
       sbSubscribeRealtime();
     }
 
@@ -2859,6 +2894,80 @@
     document.addEventListener('DOMContentLoaded', () => {
       if (_sbReady) sbInitLoad();
     });
+
+    // ===== 下校時刻データ =====
+    // /*
+    //  * Supabase DDL:
+    //  *
+    //  * CREATE TABLE school_dismissal_times (
+    //  *   id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    //  *   campus_id   text        NOT NULL,          -- 大高校 / 御南校 / 中洲校
+    //  *   school_name text        NOT NULL,          -- 例: ○○小学校
+    //  *   weekday     int         NOT NULL CHECK (weekday BETWEEN 0 AND 4), -- 0=月〜4=金
+    //  *   dismissal_time time     NOT NULL,          -- 例: 15:30
+    //  *   created_at  timestamptz DEFAULT now()
+    //  * );
+    //  *
+    //  * -- RLS: 管理者のみ書き込み可（公開読み取り）
+    //  * ALTER TABLE school_dismissal_times ENABLE ROW LEVEL SECURITY;
+    //  * CREATE POLICY "read_all"  ON school_dismissal_times FOR SELECT USING (true);
+    //  * CREATE POLICY "write_all" ON school_dismissal_times FOR ALL USING (true) WITH CHECK (true);
+    //  */
+    let dismissalTimes = []; // { id, campus_id, school_name, weekday, dismissal_time }
+    let _editingDismissalId = null;
+
+    async function sbLoadDismissalTimes() {
+      try {
+        const saved = localStorage.getItem('repeatDismissalTimes');
+        if (saved) dismissalTimes = JSON.parse(saved);
+      } catch(e) {}
+      if (!_sbReady) return;
+      try {
+        const { data, error } = await _sb
+          .from('school_dismissal_times')
+          .select('*')
+          .order('campus_id').order('school_name').order('weekday');
+        if (error) throw error;
+        dismissalTimes = (data || []).map(r => ({
+          id: r.id, campus_id: r.campus_id, school_name: r.school_name,
+          weekday: r.weekday, dismissal_time: r.dismissal_time
+        }));
+        localStorage.setItem('repeatDismissalTimes', JSON.stringify(dismissalTimes));
+      } catch(e) {
+        console.warn('[Supabase] 下校時刻取得失敗:', e.message);
+      }
+    }
+
+    async function sbSaveDismissalTime(entry) {
+      const row = {
+        campus_id: entry.campus_id, school_name: entry.school_name,
+        weekday: entry.weekday, dismissal_time: entry.dismissal_time
+      };
+      if (entry.id && !String(entry.id).startsWith('local_')) row.id = entry.id;
+      if (!_sbReady) {
+        const id = entry.id || 'local_' + Date.now();
+        const result = { ...row, id };
+        const idx = dismissalTimes.findIndex(d => d.id === entry.id);
+        if (idx >= 0) dismissalTimes[idx] = result; else dismissalTimes.push(result);
+        localStorage.setItem('repeatDismissalTimes', JSON.stringify(dismissalTimes));
+        return result;
+      }
+      const { data, error } = await _sb
+        .from('school_dismissal_times')
+        .upsert(row, { onConflict: 'id' })
+        .select().single();
+      if (error) throw error;
+      return { id: data.id, campus_id: data.campus_id, school_name: data.school_name, weekday: data.weekday, dismissal_time: data.dismissal_time };
+    }
+
+    async function sbDeleteDismissalTime(id) {
+      if (_sbReady && !String(id).startsWith('local_')) {
+        const { error } = await _sb.from('school_dismissal_times').delete().eq('id', id);
+        if (error) throw error;
+      }
+      dismissalTimes = dismissalTimes.filter(d => d.id !== id);
+      localStorage.setItem('repeatDismissalTimes', JSON.stringify(dismissalTimes));
+    }
 
     // ===== DATA =====
     let currentSchool = '';
@@ -3247,6 +3356,7 @@
         { id: 'payroll', icon: '<i class="ph ph-pencil-simple" style="font-size:18px;"></i>', title: '給与計算・シフト', page: 'page-payroll' },
         { id: 'schedule', icon: '<i class="ph ph-calendar-blank" style="font-size:18px;"></i>', title: '引落スケジュール', page: 'page-schedule' },
         { id: 'staffmgr', icon: '<i class="ph ph-user-gear" style="font-size:18px;"></i>', title: 'スタッフ管理', page: 'page-staff-management' },
+        { id: 'dismissal', icon: '<i class="ph ph-bell-ringing" style="font-size:18px;"></i>', title: '下校時刻設定', page: 'page-dismissal' },
         { id: 'manuals-admin', icon: '<i class="ph ph-book" style="font-size:18px;"></i>', title: 'マニュアル管理', page: 'page-manuals-admin' },
         { section: 'データ出力' },
         { id: 'export-att', icon: '<i class="ph ph-download-simple" style="font-size:18px;"></i>', title: '出欠をExcel出力', action: 'exportAttendance()' },
@@ -3314,7 +3424,8 @@
           'reports-admin': '現場からの日報', 'page-reports-admin': '現場からの日報',
           'manuals-admin': 'マニュアル管理', 'page-manuals-admin': 'マニュアル管理',
           'manuals-staff': 'マニュアル参照', 'page-manuals-staff': 'マニュアル参照',
-          'roster-staff': '生徒一覧（確認用）', 'page-roster-staff': '生徒一覧（確認用）'
+          'roster-staff': '生徒一覧（確認用）', 'page-roster-staff': '生徒一覧（確認用）',
+          'dismissal': '下校時刻設定', 'page-dismissal': '下校時刻設定'
         };
         title = titles[pageId] || '';
       }
@@ -5073,7 +5184,7 @@
       <td><div class="daily-hours" id="hours-${dateStr}">${savedData.hours ? savedData.hours.toFixed(2) : '-'}</div></td>
     </tr>`;
       }
-      if (tbody) { tbody.innerHTML = html; updateMonthlyTotals(); }
+      if (tbody) { tbody.innerHTML = html; updateMonthlyTotals(); checkShiftWarnings(); }
     }
 
     function calcRow(dateStr) {
@@ -5097,6 +5208,7 @@
       const prevTrips = (shiftData[currentPayrollMonth][currentStaffId][dateStr]?.trips) || 0;
       shiftData[currentPayrollMonth][currentStaffId][dateStr] = { start, end, hours, trips: prevTrips };
       updateMonthlyTotals();
+      checkShiftWarnings();
     }
 
     function parseTime(timeStr) {
@@ -5178,6 +5290,167 @@
         staffList = staffList.filter(s => s.id !== id);
         renderConfigTable();
       }
+    }
+
+    // ===== 下校時刻管理 UI =====
+    function renderDismissalPage() {
+      const wrap = document.getElementById('dismissalTableWrap');
+      if (!wrap) return;
+      const weekdayNames = ['月', '火', '水', '木', '金'];
+      if (dismissalTimes.length === 0) {
+        wrap.innerHTML = '<p style="text-align:center;color:var(--text-light);padding:24px;">登録されている下校時刻がありません。「追加」から登録してください。</p>';
+        return;
+      }
+      // campus別にグループ化
+      const campuses = [...new Set(dismissalTimes.map(d => d.campus_id))].sort();
+      let tbody = '';
+      campuses.forEach(campus => {
+        const rows = dismissalTimes
+          .filter(d => d.campus_id === campus)
+          .sort((a, b) => a.school_name.localeCompare(b.school_name, 'ja') || a.weekday - b.weekday);
+        tbody += `<tr style="background:#EFF6FF;">
+          <td colspan="5" style="font-weight:700;color:var(--primary-dark);padding:8px 12px;font-size:13px;">
+            <i class="ph ph-map-pin" style="vertical-align:middle;margin-right:4px;"></i>${campus}
+          </td></tr>`;
+        rows.forEach(d => {
+          const time = (d.dismissal_time || '').slice(0, 5);
+          tbody += `<tr>
+            <td style="color:var(--text-light);font-size:12px;">${d.campus_id}</td>
+            <td style="font-weight:600;">${d.school_name}</td>
+            <td><span class="badge-course">${weekdayNames[d.weekday]}曜日</span></td>
+            <td style="font-weight:700;color:var(--primary-dark);font-size:15px;">${time}</td>
+            <td style="text-align:right;">
+              <button class="btn btn-outline btn-sm" onclick="openDismissalModal('${d.id}')"
+                style="margin-right:4px;padding:4px 10px;font-size:12px;">
+                <i class="ph ph-pencil-simple" style="vertical-align:middle;"></i> 編集
+              </button>
+            </td>
+          </tr>`;
+        });
+      });
+      wrap.innerHTML = `
+        <table class="config-table">
+          <thead><tr>
+            <th>校舎</th><th>学校名</th><th>曜日</th><th>下校時刻</th><th style="text-align:right;width:100px;">操作</th>
+          </tr></thead>
+          <tbody>${tbody}</tbody>
+        </table>`;
+    }
+
+    function openDismissalModal(id = null) {
+      _editingDismissalId = id;
+      document.getElementById('dismissalModalTitle').textContent = id ? '下校時刻を編集' : '下校時刻を追加';
+      document.getElementById('dmError').style.display = 'none';
+      document.getElementById('dmSaveBtn').disabled = false;
+      document.getElementById('dmSaveBtn').textContent = '保存';
+      document.getElementById('dmDeleteBtn').style.display = id ? 'block' : 'none';
+      if (id) {
+        const entry = dismissalTimes.find(d => d.id === id);
+        if (entry) {
+          document.getElementById('dmCampus').value  = entry.campus_id;
+          document.getElementById('dmSchoolName').value = entry.school_name;
+          document.getElementById('dmWeekday').value = entry.weekday;
+          document.getElementById('dmTime').value    = (entry.dismissal_time || '').slice(0, 5);
+        }
+      } else {
+        document.getElementById('dmCampus').value    = '中洲校';
+        document.getElementById('dmSchoolName').value = '';
+        document.getElementById('dmWeekday').value   = '0';
+        document.getElementById('dmTime').value      = '';
+      }
+      showModal('dismissalModal');
+    }
+
+    async function saveDismissalEntry() {
+      const campus     = document.getElementById('dmCampus').value;
+      const schoolName = document.getElementById('dmSchoolName').value.trim();
+      const weekday    = parseInt(document.getElementById('dmWeekday').value);
+      const time       = document.getElementById('dmTime').value;
+      const errEl      = document.getElementById('dmError');
+      errEl.style.display = 'none';
+      if (!schoolName) { errEl.textContent = '学校名を入力してください'; errEl.style.display = 'block'; return; }
+      if (!time)       { errEl.textContent = '下校時刻を入力してください'; errEl.style.display = 'block'; return; }
+
+      const btn = document.getElementById('dmSaveBtn');
+      btn.disabled = true; btn.textContent = '保存中...';
+      try {
+        const saved = await sbSaveDismissalTime({
+          id: _editingDismissalId, campus_id: campus,
+          school_name: schoolName, weekday, dismissal_time: time
+        });
+        const idx = dismissalTimes.findIndex(d => d.id === saved.id);
+        if (idx >= 0) dismissalTimes[idx] = saved; else dismissalTimes.push(saved);
+        localStorage.setItem('repeatDismissalTimes', JSON.stringify(dismissalTimes));
+        closeModal('dismissalModal');
+        renderDismissalPage();
+        showSysToast('下校時刻を保存しました ✅');
+      } catch(e) {
+        errEl.textContent = '保存に失敗しました: ' + e.message;
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false; btn.textContent = '保存';
+      }
+    }
+
+    async function deleteDismissalEntry(id) {
+      if (!id) return;
+      if (!confirm('この下校時刻を削除しますか？')) return;
+      try {
+        await sbDeleteDismissalTime(id);
+        closeModal('dismissalModal');
+        renderDismissalPage();
+        showSysToast('削除しました');
+      } catch(e) {
+        alert('削除に失敗しました: ' + e.message);
+      }
+    }
+
+    // ===== シフト警告チェック =====
+    function checkShiftWarnings() {
+      const bannerEl = document.getElementById('shiftWarningBanner');
+      if (!bannerEl) return;
+      if (!currentPayrollMonth || !currentStaffId) { bannerEl.style.display = 'none'; return; }
+      const monthData = shiftData[currentPayrollMonth]?.[currentStaffId];
+      if (!monthData || dismissalTimes.length === 0) { bannerEl.style.display = 'none'; return; }
+
+      const warnings = [];
+      Object.entries(monthData).forEach(([dateStr, data]) => {
+        if (!data.start || !data.hours || data.hours <= 0) return;
+        const jsDay = new Date(dateStr).getDay(); // 0=日, 1=月, ..., 6=土
+        if (jsDay === 0 || jsDay === 6) return;   // 土日は対象外
+        const dbWeekday = jsDay - 1;              // DB: 0=月〜4=金
+        const startH = parseTime(data.start);
+
+        dismissalTimes.forEach(dt => {
+          if (dt.weekday !== dbWeekday) return;
+          const dismissH = parseTime((dt.dismissal_time || '').slice(0, 5));
+          if (startH > dismissH) {
+            const [, m, d] = dateStr.split('-');
+            warnings.push({
+              date: `${parseInt(m)}/${parseInt(d)}(${['日','月','火','水','木','金','土'][jsDay]})`,
+              school: dt.school_name, campus: dt.campus_id,
+              dismissalTime: (dt.dismissal_time || '').slice(0, 5),
+              startTime: data.start
+            });
+          }
+        });
+      });
+
+      if (warnings.length === 0) { bannerEl.style.display = 'none'; return; }
+
+      bannerEl.style.display = 'block';
+      bannerEl.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <i class="ph ph-warning" style="font-size:20px;flex-shrink:0;margin-top:1px;"></i>
+          <div>
+            <strong>⚠️ 下校時刻より出勤が遅い日があります（${warnings.length}件）</strong>
+            <ul style="margin:8px 0 0 0;padding-left:16px;line-height:1.8;">
+              ${warnings.map(w =>
+                `<li><strong>${w.date}</strong>：${w.school}（${w.campus}）の下校時刻 <strong>${w.dismissalTime}</strong> より出勤 <strong>${w.startTime}</strong> が遅いです</li>`
+              ).join('')}
+            </ul>
+          </div>
+        </div>`;
     }
 
     function saveStaffConfig() {
@@ -5699,10 +5972,64 @@
         renderStaffPayslip();
       } else if (pageId === 'page-dashboard' || pageId === 'dashboard') {
         if (typeof renderDashboard === 'function') renderDashboard();
+      } else if (pageId === 'page-dismissal' || pageId === 'dismissal') {
+        if (typeof renderDismissalPage === 'function') renderDismissalPage();
       }
     };
 
   </script>
+
+  <!-- 下校時刻設定モーダル -->
+  <div class="modal-overlay" id="dismissalModal">
+    <div class="modal-box" style="max-width:480px;">
+      <div class="modal-header">
+        <span id="dismissalModalTitle" style="font-weight:700;font-size:15px;">下校時刻を追加</span>
+        <button class="modal-close" onclick="closeModal('dismissalModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;gap:12px;margin-bottom:12px;">
+          <div style="flex:1;">
+            <label class="form-label" style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">校舎</label>
+            <select id="dmCampus" class="form-select">
+              <option value="中洲校">中洲校</option>
+              <option value="大高校">大高校</option>
+              <option value="御南校">御南校</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label class="form-label" style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">曜日</label>
+            <select id="dmWeekday" class="form-select">
+              <option value="0">月曜日</option>
+              <option value="1">火曜日</option>
+              <option value="2">水曜日</option>
+              <option value="3">木曜日</option>
+              <option value="4">金曜日</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label class="form-label" style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">学校名</label>
+          <input type="text" id="dmSchoolName" class="form-input" placeholder="例: ○○小学校" />
+        </div>
+        <div style="margin-bottom:16px;">
+          <label class="form-label" style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">下校時刻</label>
+          <input type="time" id="dmTime" class="form-input" />
+        </div>
+        <!-- エラー表示 -->
+        <div id="dmError" class="alert alert-danger" style="display:none;"></div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:space-between;">
+        <button id="dmDeleteBtn" class="btn" style="background:#FEE2E2;color:#B91C1C;border-radius:8px;padding:8px 16px;font-size:13px;display:none;"
+          onclick="deleteDismissalEntry(_editingDismissalId)">削除</button>
+        <div style="display:flex;gap:8px;margin-left:auto;">
+          <button class="btn btn-outline" style="border-radius:8px;padding:8px 16px;font-size:13px;"
+            onclick="closeModal('dismissalModal')">キャンセル</button>
+          <button id="dmSaveBtn" class="btn" style="background:var(--primary);color:white;border-radius:8px;padding:8px 24px;font-size:13px;"
+            onclick="saveDismissalEntry()">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- PDF Container (Hidden) -->
   <div id="pdf-container">
