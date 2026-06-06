@@ -4665,42 +4665,96 @@
     }
 
     function generatePDF() {
+      if (!currentPayrollMonth || !currentStaffId) {
+        alert('年月とスタッフを選択してください'); return;
+      }
       const [year, month] = currentPayrollMonth.split('-');
-      const { staff, hours, days, basePay, transportPay, tripsPay, totalTrips, totalPay, data } = getStaffTotals(currentStaffId, currentPayrollMonth);
-      if (days === 0) { alert('勤務データがありません'); return; }
+      const totals = getStaffTotals(currentStaffId, currentPayrollMonth);
+      if (!totals.staff) { alert('スタッフが見つかりません'); return; }
+      const { staff, hours, days, basePay, transportPay, tripsPay, totalTrips, totalPay, data } = totals;
+      if (days === 0) { alert('勤務データがありません\n\nシフト入力・計算タブで出退勤時間を入力し「データを保存」してから再度お試しください'); return; }
 
       const tripsRow = totalTrips > 0
         ? `<tr><th>送迎代金 (${totalTrips}回 × ¥100)</th><td>¥${tripsPay.toLocaleString()}</td><th></th><td></td></tr>`
         : '';
-      let content = `
-    <div class="pdf-header"><div class="pdf-title">給与明細書</div></div>
-    <div class="pdf-meta"><div><strong>従業員名：</strong> ${staff.name} 様</div><div><strong>対象月：</strong> ${year}年${parseInt(month)}月分</div></div>
-    <div style="text-align:right; margin-bottom:15px; font-size:12px;">発行元： リピート学童保育</div>
-    <table class="pdf-summary-table" style="margin-bottom: 30px; width: 100%;">
-      <tr><th>出勤日数</th><td>${days} 日</td><th>合計勤務時間</th><td>${hours.toFixed(2)} 時間</td></tr>
-      <tr><th>基本給与 (時給: ¥${staff.hourlyWage.toLocaleString()})</th><td>¥${basePay.toLocaleString()}</td><th>交通費 (${days}日 × ¥${staff.transportFee})</th><td>¥${transportPay.toLocaleString()}</td></tr>
-      ${tripsRow}
-      <tr class="pdf-total-row"><th colspan="3" style="text-align:center;">当月差引支給総額</th><td style="color:#e65100;">¥${totalPay.toLocaleString()}</td></tr>
-    </table>
-    <h4>勤務実績詳細</h4>
-    <table class="pdf-table"><thead><tr><th>日付</th><th>勤務時間</th><th>時間数</th></tr></thead><tbody>
-  `;
+
+      // 勤務実績詳細テーブルの行を生成
       const daysInM = getDaysInMonth(year, month);
+      let detailRows = '';
       for (let i = 1; i <= daysInM; i++) {
         const dStr = `${currentPayrollMonth}-${String(i).padStart(2, '0')}`;
         const row = data[dStr];
-        if (row && row.hours > 0) content += `<tr><td>${parseInt(month)}/${i}</td><td>${row.start} 〜 ${row.end}</td><td>${row.hours.toFixed(2)}h</td></tr>`;
+        if (row && row.hours > 0) detailRows += `<tr><td>${parseInt(month)}/${i}</td><td>${row.start} 〜 ${row.end}</td><td>${row.hours.toFixed(2)}h</td></tr>`;
       }
-      content += `</tbody></table>`;
 
-      const pdfContainer = document.getElementById('pdf-content');
-      pdfContainer.innerHTML = content;
-      showSysToast('PDFを生成しています... ⏳');
+      const htmlContent = `
+    <div class="pdf-header"><div class="pdf-title">給 与 明 細 書</div></div>
+    <div class="pdf-meta"><div><strong>従業員名：</strong> ${staff.name} 様</div><div><strong>対象月：</strong> ${year}年${parseInt(month)}月分</div></div>
+    <div style="text-align:right; margin-bottom:15px; font-size:12px; color:#666;">発行元： リピート学童保育</div>
+    <table class="pdf-summary-table" style="margin-bottom: 30px; width: 100%;">
+      <tr><th>出勤日数</th><td>${days} 日</td><th>合計勤務時間</th><td>${hours.toFixed(2)} 時間</td></tr>
+      <tr><th>基本給与 (時給: ¥${staff.hourlyWage.toLocaleString()})</th><td>¥${basePay.toLocaleString()}</td><th>交通費 (${days}日 × ¥${staff.transportFee.toLocaleString()})</th><td>¥${transportPay.toLocaleString()}</td></tr>
+      ${tripsRow}
+      <tr class="pdf-total-row"><th colspan="3" style="text-align:center;">当月差引支給総額</th><td style="color:#e65100; font-size:18px; font-weight:bold;">¥${totalPay.toLocaleString()}</td></tr>
+    </table>
+    <h4 style="border-bottom:1px solid #ccc; padding-bottom:6px;">勤務実績詳細</h4>
+    <table class="pdf-table"><thead><tr><th>日付</th><th>勤務時間</th><th>時間数</th></tr></thead>
+    <tbody>${detailRows}</tbody></table>
+    <div style="margin-top:40px; font-size:11px; color:#999; text-align:center;">作成日: ${new Date().toLocaleDateString('ja-JP')}</div>
+  `;
 
-      const opt = { margin: 10, filename: `給与明細_${year}${month}_${staff.name}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-      const wrapper = document.getElementById('pdf-container');
-      wrapper.style.display = 'block';
-      html2pdf().set(opt).from(pdfContainer).save().then(() => { wrapper.style.display = 'none'; showSysToast('PDFのダウンロードが完了しました 📄'); });
+      // html2pdf.js が使える場合はダウンロード、使えない場合は印刷ウィンドウにフォールバック
+      if (typeof html2pdf === 'function') {
+        const pdfContainer = document.getElementById('pdf-content');
+        pdfContainer.innerHTML = htmlContent;
+        const wrapper = document.getElementById('pdf-container');
+        wrapper.style.display = 'block';
+        showSysToast('PDFを生成しています... ⏳');
+        const opt = {
+          margin: 10,
+          filename: `給与明細_${year}${month}_${staff.name}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        html2pdf().set(opt).from(pdfContainer).save()
+          .then(() => { wrapper.style.display = 'none'; showSysToast('PDFのダウンロードが完了しました 📄'); })
+          .catch(err => {
+            wrapper.style.display = 'none';
+            console.error('html2pdf error:', err);
+            _openPrintWindow(htmlContent, `給与明細_${year}${month}_${staff.name}`);
+          });
+      } else {
+        // フォールバック: ブラウザの印刷ダイアログを使用
+        _openPrintWindow(htmlContent, `給与明細_${year}${month}_${staff.name}`);
+      }
+    }
+
+    function _openPrintWindow(bodyHtml, title) {
+      const win = window.open('', '_blank', 'width=800,height=600');
+      if (!win) { alert('ポップアップがブロックされています。ブラウザの設定でポップアップを許可してください。'); return; }
+      win.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+      <title>${title}</title>
+      <style>
+        body { font-family: "Hiragino Sans","Noto Sans JP",sans-serif; padding: 20mm; color:#333; font-size:12px; }
+        .pdf-header { text-align:center; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px; }
+        .pdf-title { font-size:22px; font-weight:bold; letter-spacing:3px; }
+        .pdf-meta { display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px; }
+        .pdf-summary-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+        .pdf-summary-table th { background:#f0f0f0; padding:8px 12px; text-align:left; border:1px solid #ccc; font-size:12px; }
+        .pdf-summary-table td { padding:8px 12px; border:1px solid #ccc; font-size:13px; }
+        .pdf-total-row th, .pdf-total-row td { background:#FFF3E0; font-weight:bold; }
+        .pdf-table { width:100%; border-collapse:collapse; }
+        .pdf-table th { background:#f0f0f0; padding:6px 10px; border:1px solid #ccc; text-align:left; }
+        .pdf-table td { padding:6px 10px; border:1px solid #ccc; }
+        @media print { button { display:none; } }
+      </style></head><body>
+      <div style="text-align:right;margin-bottom:10px;">
+        <button onclick="window.print()" style="padding:8px 20px;background:#1E88E5;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px;">🖨️ 印刷 / PDF保存</button>
+      </div>
+      ${bodyHtml}
+      </body></html>`);
+      win.document.close();
     }
 
     function generateAllPDF() {
@@ -4729,14 +4783,19 @@
     <h4>スタッフ別 内訳</h4>
     <table class="pdf-table"><thead><tr><th>スタッフ名</th><th>出勤日数</th><th>時間</th><th>基本給</th><th>交通費</th><th>支払総額</th></tr></thead><tbody>${tableRows}</tbody></table>
   `;
-      const pdfContainer = document.getElementById('pdf-content');
-      pdfContainer.innerHTML = content;
-      showSysToast('全体用PDFを生成しています... ⏳');
-
-      const opt = { margin: 10, filename: `給与支払一覧表_${year}${month}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-      const wrapper = document.getElementById('pdf-container');
-      wrapper.style.display = 'block';
-      html2pdf().set(opt).from(pdfContainer).save().then(() => { wrapper.style.display = 'none'; showSysToast('リストPDFのダウンロードが完了しました 📁'); });
+      if (typeof html2pdf === 'function') {
+        const pdfContainer = document.getElementById('pdf-content');
+        pdfContainer.innerHTML = content;
+        showSysToast('全体用PDFを生成しています... ⏳');
+        const opt = { margin: 10, filename: `給与支払一覧表_${year}${month}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+        const wrapper = document.getElementById('pdf-container');
+        wrapper.style.display = 'block';
+        html2pdf().set(opt).from(pdfContainer).save()
+          .then(() => { wrapper.style.display = 'none'; showSysToast('リストPDFのダウンロードが完了しました 📁'); })
+          .catch(err => { wrapper.style.display = 'none'; _openPrintWindow(content, `給与支払一覧表_${year}${month}`); });
+      } else {
+        _openPrintWindow(content, `給与支払一覧表_${year}${month}`);
+      }
     }
 
     // ===== REPORTS LOGIC =====
