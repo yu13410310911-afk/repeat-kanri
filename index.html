@@ -1878,12 +1878,41 @@
               </div>
               <div>
                 <label class="form-label">フォーマット</label>
-                <select class="form-select" id="billingExportFormat">
+                <select class="form-select" id="billingExportFormat" onchange="toggleYuchoSettings()">
                   <option value="standard">標準（生徒名・金額）</option>
                   <option value="yucho">ゆうちょビズダイレクト形式</option>
                   <option value="sukumane">スクマネ取込形式</option>
                 </select>
               </div>
+            </div>
+            <!-- ゆうちょ設定（ゆうちょ形式選択時のみ表示） -->
+            <div id="yuchoSettingsArea" style="display:none; margin-top:12px; padding:12px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">
+              <p style="font-size:12px; font-weight:600; color:var(--text); margin-bottom:8px;">ゆうちょBizダイレクト設定</p>
+              <div class="form-row">
+                <div>
+                  <label class="form-label">委託者コード（7桁）</label>
+                  <input type="text" class="form-input" id="yuchoOrgCode" maxlength="7" placeholder="0000000"
+                    oninput="saveYuchoSettings()" />
+                </div>
+                <div>
+                  <label class="form-label">委託者名（カナ）</label>
+                  <input type="text" class="form-input" id="yuchoOrgName" placeholder="リピートガクドウ"
+                    oninput="saveYuchoSettings()" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label class="form-label">委託者振替口座番号（7桁）</label>
+                  <input type="text" class="form-input" id="yuchoOrgAccount" maxlength="7" placeholder="0000000"
+                    oninput="saveYuchoSettings()" />
+                </div>
+                <div>
+                  <label class="form-label">指定番号（7桁）</label>
+                  <input type="text" class="form-input" id="yuchoSpecCode" maxlength="7" placeholder="0000000"
+                    oninput="saveYuchoSettings()" />
+                </div>
+              </div>
+              <p style="font-size:11px; color:var(--text-light); margin-top:4px;">※各生徒の口座番号は名簿の「銀行情報」欄から自動取得します（例: ゆうちょ銀行 一二八店(普) 1234567）</p>
             </div>
           </div>
 
@@ -2001,6 +2030,10 @@
                   onchange="handleRosterCSVSelect(event)" />
                 <button class="export-btn" onclick="exportRosterCSV()"><i class="ph ph-upload-simple"
                     style="vertical-align:middle;margin-right:4px;"></i> EXCEL出力</button>
+                <button class="btn" onclick="yearlyUpdate()"
+                  style="background:#FEF3C7;color:#92400E;padding:8px 12px;font-size:13px;border-radius:8px;border:1px solid #FCD34D;">
+                  <i class="ph ph-arrow-clockwise" style="vertical-align:middle;margin-right:4px;"></i> 年度更新
+                </button>
                 <button class="btn" onclick="deleteAllStudents()"
                   style="background:#FEE2E2;color:#991B1B;padding:8px 12px;font-size:13px;border-radius:8px;">
                   <i class="ph ph-trash" style="vertical-align:middle;margin-right:4px;"></i> 全生徒削除
@@ -2619,6 +2652,7 @@
       } else if (pageId === 'page-manuals-admin') renderManualsAdmin();
       else if (pageId === 'page-manuals-staff') renderManualsStaff();
       else if (pageId === 'page-roster-staff') renderRosterStaff();
+      else if (pageId === 'page-dashboard') renderDashboard();
     }
 
     // ===== Supabase データ層 =====
@@ -2739,7 +2773,11 @@
         .on('postgres_changes', { event: '*', schema: 'public', table: 'manuals' }, () => {
           sbLoadManuals().then(refreshCurrentView);
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, async () => {
+          const date = document.getElementById('attDate')?.value;
+          if (date && _sbReady) {
+            await sbLoadAttendanceForDate(date, currentSchool);
+          }
           refreshCurrentView();
         })
         .subscribe();
@@ -2958,6 +2996,24 @@
       return 0; // 特別コース or その他
     }
 
+    // 12日間コースの今年度利用日数・残日数を取得
+    function get12DayUsage(studentId) {
+      const today = new Date();
+      const syStartYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
+      const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+      let usedDays = 0;
+      Object.entries(dataStore).forEach(([date, rows]) => {
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return;
+        const startOfYear = new Date(syStartYear, 3, 1); // 4月1日
+        const endOfYear   = new Date(syStartYear + 1, 2, 31); // 翌年3月31日
+        if (d < startOfYear || d > endOfYear) return;
+        const row = rows.find(r => String(r.studentId) === String(studentId));
+        if (row && !row.isAbsent) usedDays++;
+      });
+      return { used: usedDays, remaining: Math.max(0, 12 - usedDays), total: 12 };
+    }
+
     function calcBilling(studentId, yearMonth) {
       const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
 
@@ -2975,7 +3031,12 @@
 
       let base = BASE_PRICES[s.course] !== undefined ? BASE_PRICES[s.course] : getBasePrice(s.course, s.grade);
 
-      let extCount = 0, extMin = 0, lunchCount = 0, largeLunchCount = 0, potatoCount = 0, satCount = 0, holCount = 0, morningExtCount = 0, eventFeeTotal = 0, transportCount = 0;
+      // スポットコースは出席日数×1日単価で計算（base=0スタート、後で集計）
+      const isSpotCourse = (s.course || '').includes('スポット');
+      const spotDayRate = s.spotDayRate || 1200; // デフォルト1200円/日
+      if (isSpotCourse) base = 0;
+
+      let extCount = 0, extMin = 0, lunchCount = 0, largeLunchCount = 0, potatoCount = 0, satCount = 0, holCount = 0, morningExtCount = 0, eventFeeTotal = 0, transportCount = 0, spotDayCount = 0;
 
       // localStorageの実データ（repeatSukumaneData）から該当月のデータを抽出
 
@@ -2986,6 +3047,8 @@
 
         // 出席している場合のみ加算計算
         if (att && !att.isAbsent) {
+          // スポット: 出席1日をカウント
+          if (isSpotCourse) spotDayCount++;
           // 夜間延長の計算
           if (att.exitTime && att.exitTime !== '') {
             const [h, m] = att.exitTime.split(':').map(Number);
@@ -3031,6 +3094,9 @@
         }
       });
 
+      // スポット: 出席日数×日単価
+      if (isSpotCourse) base = spotDayCount * spotDayRate;
+
       const extUnits = Math.ceil(extMin / 30);
       const extFee = (extUnits * 550) + (morningExtCount * 550); // 朝延長(1回550) + 夜間延長(30分550)
       const lunchFee = lunchCount * 450;
@@ -3051,7 +3117,7 @@
 
       const total = base + extFee + lunchFee + largeLunchFee + potatoFee + satFee + holFee + transportFee + eventFeeTotal;
 
-      return { base, extFee, extUnits, morningExtCount, lunchFee, lunchCount, largeLunchFee, largeLunchCount, potatoFee, potatoCount, satFee, satCount, holFee, holCount, transportFee, eventFeeTotal, total, transportCount };
+      return { base, extFee, extUnits, morningExtCount, lunchFee, lunchCount, largeLunchFee, largeLunchCount, potatoFee, potatoCount, satFee, satCount, holFee, holCount, transportFee, eventFeeTotal, total, transportCount, spotDayCount };
     }
 
     // ===== LOGIN & ROLE MANAGEMENT =====
@@ -3197,7 +3263,10 @@
 
       const account = accounts.find(a => a.id === idInput && a.role === loginRole);
 
-      if (account && (account.pass === '' || account.pass === passInput || passInput === '')) {
+      if (account && (account.pass === '' || account.pass === passInput)) {
+        if (account.pass === '') {
+          setTimeout(() => showSysToast('⚠️ このアカウントにパスワードが設定されていません。設定を推奨します。'), 500);
+        }
         if (loginRole === 'staff') {
           const school = account.school || document.getElementById('loginSchool').value;
           if (!school) { alert('担当校舎が未設定です。校舎を選択してください。'); return; }
@@ -3428,12 +3497,20 @@
         const extTime = row.exitTime || '';
         const chipLabel = st === 'present' ? '出席' : '欠席';
 
-        cards += `
+        // 12日間コースの残日数バッジ
+      let twelveDayBadge = '';
+      if ((row.course || '').includes('12日間')) {
+        const usage = get12DayUsage(row.studentId);
+        const badgeColor = usage.remaining <= 2 ? '#dc2626' : usage.remaining <= 4 ? '#d97706' : '#16a34a';
+        twelveDayBadge = ` <span style="font-size:10px;padding:1px 6px;border-radius:9px;background:${badgeColor};color:#fff;font-weight:600;">残${usage.remaining}日</span>`;
+      }
+
+      cards += `
     <div class="att-card ${st === 'present' ? 'is-present' : 'is-absent'}" id="att-card-${index}">
       <div class="att-card-top">
         <div class="att-card-info">
           <div class="att-card-name">${row.name}</div>
-          <div class="att-card-meta">${row.grade} · <span class="badge-course">${row.course || 'コース不明'}</span></div>
+          <div class="att-card-meta">${row.grade} · <span class="badge-course">${row.course || 'コース不明'}</span>${twelveDayBadge}</div>
         </div>
         <span class="att-status-chip ${st}" id="status-chip-${index}">${chipLabel}</span>
       </div>
@@ -3792,6 +3869,10 @@
         grandTotalAmount += totalRowAmount; // Add to grand total
 
         let detailStr = '';
+        if ((s.course || '').includes('スポット') && b.spotDayCount > 0) {
+          const rate = s.spotDayRate || 1200;
+          detailStr += `<span class="badge-course">スポット${b.spotDayCount}日×¥${rate.toLocaleString()}</span> `;
+        }
         if (b.morningExtCount > 0) detailStr += `<span class="badge-course">朝延長${b.morningExtCount}回</span> `;
         if (b.extUnits > 0) detailStr += `<span class="badge-course">夕延長${b.extUnits}枠</span> `;
         if (b.satCount > 0) detailStr += `<span class="badge-course">土曜${b.satCount}回</span> `;
@@ -3834,6 +3915,35 @@
       if (exportDateInput && !exportDateInput.value) {
         exportDateInput.value = `${y}-${m}-20`;
       }
+      // ゆうちょ設定を復元
+      loadYuchoSettings();
+      toggleYuchoSettings();
+    }
+
+    function toggleYuchoSettings() {
+      const fmt = document.getElementById('billingExportFormat')?.value;
+      const area = document.getElementById('yuchoSettingsArea');
+      if (area) area.style.display = (fmt === 'yucho') ? 'block' : 'none';
+    }
+    function saveYuchoSettings() {
+      const s = {
+        orgCode:  document.getElementById('yuchoOrgCode')?.value  || '',
+        orgName:  document.getElementById('yuchoOrgName')?.value  || '',
+        orgAcct:  document.getElementById('yuchoOrgAccount')?.value || '',
+        specCode: document.getElementById('yuchoSpecCode')?.value || '',
+      };
+      localStorage.setItem('repeatYuchoSettings', JSON.stringify(s));
+    }
+    function loadYuchoSettings() {
+      try {
+        const s = JSON.parse(localStorage.getItem('repeatYuchoSettings') || '{}');
+        // UIに反映
+        if (document.getElementById('yuchoOrgCode'))     document.getElementById('yuchoOrgCode').value     = s.orgCode  || '';
+        if (document.getElementById('yuchoOrgName'))     document.getElementById('yuchoOrgName').value     = s.orgName  || '';
+        if (document.getElementById('yuchoOrgAccount'))  document.getElementById('yuchoOrgAccount').value  = s.orgAcct  || '';
+        if (document.getElementById('yuchoSpecCode'))    document.getElementById('yuchoSpecCode').value    = s.specCode || '';
+        return s;
+      } catch(e) { return {}; }
     }
 
     function exportBillingCSV() {
@@ -3867,14 +3977,30 @@
         });
 
       } else if (exportFormat === 'yucho') {
-        // ゆうちょBizダイレクト形式 (シンプル版)
-        csvContent += "1,21,0,dummyCode,リピートガクドウ,0000,00000,1,0000000\n";
+        // ゆうちょBizダイレクト形式
+        const ySettings = loadYuchoSettings();
+        const orgCode   = (ySettings.orgCode   || '0000000').padStart(7, '0').slice(0, 7);
+        const orgName   = ySettings.orgName    || 'リピートガクドウ';
+        const orgAcct   = (ySettings.orgAcct   || '0000000').padStart(7, '0').slice(0, 7);
+        const specCode  = (ySettings.specCode  || '0000000').padStart(7, '0').slice(0, 7);
+        // 引落日: MMDD形式
+        const dateMMDD  = exportDate.length >= 6 ? exportDate.slice(4, 8) : '0000';
+        csvContent += `1,21,0,${orgCode},${orgName},${dateMMDD},${specCode},1,${orgAcct}\n`;
+        let yuchoCount = 0;
+        let yuchoTotal = 0;
         targetStudents.forEach((s) => {
           const b = calcBilling(s.id, targetMonthStr);
           if (!b || b.total === 0) return;
-          csvContent += `2,9900,001,1,1234567,"${s.nameKana || s.name}",${b.total},1,0\n`;
+          // bankInfoから口座番号を抽出（末尾の7桁数字）
+          const acctMatch = (s.bankInfo || '').match(/(\d{7})\s*$/);
+          const acctNum = acctMatch ? acctMatch[1] : '0000000';
+          const holderName = s.nameKana || s.name;
+          csvContent += `2,9900,001,1,${acctNum},"${holderName}",${b.total},1,0\n`;
+          yuchoCount++;
+          yuchoTotal += b.total;
         });
-        csvContent += `8,${targetStudents.length},000000000000\n`;
+        const totalStr = String(yuchoTotal).padStart(12, '0');
+        csvContent += `8,${yuchoCount},${totalStr}\n`;
       } else {
         // Sukumane取込用フォーマット
         csvContent += "会員名,請求年月,請求日,請求金額\n";
@@ -3996,6 +4122,42 @@
         '2027-01': '1月20日', '2027-02': '2月22日', '2027-03': '3月23日',
       };
       return map[ym] || '-';
+    }
+
+    // ===== YEARLY UPDATE (年度更新) =====
+    function yearlyUpdate() {
+      const gradeOrder = ['1年生', '2年生', '3年生', '4年生', '5年生', '6年生'];
+      const graduating = STUDENTS.filter(s => s.grade === '6年生');
+      const msg = `年度更新を実行します。\n\n` +
+        `・全生徒の学年を1つ上げます（6年生→卒業）\n` +
+        `・6年生 ${graduating.length}名 は名簿から除外されます\n\n` +
+        `実行してよろしいですか？`;
+      if (!confirm(msg)) return;
+
+      let graduatedCount = 0;
+      let updatedCount = 0;
+      const newStudents = [];
+
+      STUDENTS.forEach(s => {
+        const idx = gradeOrder.indexOf(s.grade);
+        if (idx === gradeOrder.length - 1) {
+          // 6年生 → 卒業（除外）
+          graduatedCount++;
+        } else if (idx >= 0) {
+          // 1〜5年生 → 1つ上げる
+          newStudents.push({ ...s, grade: gradeOrder[idx + 1] });
+          updatedCount++;
+        } else {
+          // 学年不明は変更なし
+          newStudents.push({ ...s });
+        }
+      });
+
+      STUDENTS.length = 0;
+      newStudents.forEach(s => STUDENTS.push(s));
+      localStorage.setItem('repeatStudentsData', JSON.stringify(STUDENTS));
+      renderRoster();
+      showSysToast(`年度更新完了: ${updatedCount}名の学年を更新、${graduatedCount}名が卒業しました 🎓`);
     }
 
     // ===== ROSTER (生徒名簿) =====
@@ -4339,9 +4501,24 @@
     // ===== SCHEDULE =====
     function renderSchedule() {
       const today = new Date();
+      // 次回の引落日を動的に計算
+      function getNextWithdrawDate() {
+        const ym = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+        const thisDateStr = getWithdrawDate(ym);
+        const m = thisDateStr.match(/(\d+)月(\d+)日/);
+        if (m) {
+          const d = new Date(today.getFullYear(), parseInt(m[1]) - 1, parseInt(m[2]));
+          if (today <= d) return thisDateStr;
+        }
+        // 今月の引落日を過ぎていたら翌月を使う
+        const nd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        const nextYm = `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`;
+        return getWithdrawDate(nextYm);
+      }
+      const nextDateLabel = getNextWithdrawDate();
       const html = `<thead><tr><th>引落日</th><th>内容</th></tr></thead><tbody>` +
         SCHEDULE.map(row => {
-          const isNext = row.date === '4月20日';
+          const isNext = row.date === nextDateLabel;
           return `<tr class="${isNext ? 'schedule-highlight' : ''}">
         <td style="white-space:nowrap;font-weight:600;">${row.date}</td>
         <td>${row.content}${isNext ? ' <i class="ph ph-arrow-right" style="vertical-align:middle;"></i>' : ''}</td>
@@ -5180,10 +5357,17 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="stuModalId" value="" />
-        <div style="margin-bottom:12px;">
-          <label class="form-label"
-            style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">名前</label>
-          <input type="text" id="stuModalName" class="form-input" placeholder="例: 日本 太郎" />
+        <div style="display:flex;gap:12px;margin-bottom:12px;">
+          <div style="flex:1;">
+            <label class="form-label"
+              style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">名前</label>
+            <input type="text" id="stuModalName" class="form-input" placeholder="例: 日本 太郎" />
+          </div>
+          <div style="flex:1;">
+            <label class="form-label"
+              style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">フリガナ（カナ）</label>
+            <input type="text" id="stuModalNameKana" class="form-input" placeholder="例: ニホン タロウ" />
+          </div>
         </div>
         <div style="display:flex;gap:12px;margin-bottom:12px;">
           <div style="flex:1;">
@@ -5204,7 +5388,7 @@
         <div style="margin-bottom:12px;">
           <label class="form-label"
             style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">コース</label>
-          <select id="stuModalCourse" class="form-select">
+          <select id="stuModalCourse" class="form-select" onchange="toggleSpotRateArea()">
             <option value="月極全日（1〜3年）">月極全日（1〜3年）</option>
             <option value="月極全日（4〜6年）">月極全日（4〜6年）</option>
             <option value="12日間コース">12日間コース</option>
@@ -5219,6 +5403,12 @@
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
             <input type="checkbox" id="stuModalTransport" style="accent-color:var(--primary);" /> 送迎あり
           </label>
+        </div>
+        <!-- スポット日単価（スポットコース選択時のみ表示） -->
+        <div id="spotRateArea" style="display:none; margin-bottom:12px;">
+          <label class="form-label" style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">
+            スポット日単価（円/日）</label>
+          <input type="number" id="stuModalSpotRate" class="form-input" placeholder="例: 1200" min="0" step="100" />
         </div>
         <div style="margin-bottom:16px;">
           <label class="form-label" style="font-size:12px;color:var(--text-light);margin-bottom:4px;display:block;">口座情報
@@ -5241,6 +5431,12 @@
     </div>
   </div>
   <script>
+    function toggleSpotRateArea() {
+      const course = document.getElementById('stuModalCourse')?.value || '';
+      const area = document.getElementById('spotRateArea');
+      if (area) area.style.display = course.includes('スポット') ? 'block' : 'none';
+    }
+
     function openStudentModal(id = null) {
       const isEdit = id !== null;
       document.getElementById('studentModalTitle').textContent = isEdit ? '生徒情報の編集' : '生徒を新規登録';
@@ -5268,16 +5464,21 @@
           }
           document.getElementById('stuModalTransport').checked = s.transport || false;
           document.getElementById('stuModalBank').value = (s.bankInfo || '').replace(/<br\/>/g, ' ');
+          document.getElementById('stuModalNameKana').value = s.nameKana || '';
+          document.getElementById('stuModalSpotRate').value = s.spotDayRate || 1200;
         }
       } else {
         document.getElementById('stuModalId').value = '';
         document.getElementById('stuModalName').value = '';
+        document.getElementById('stuModalNameKana').value = '';
         document.getElementById('stuModalSchool').value = '中洲校';
         document.getElementById('stuModalGrade').value = '';
         document.getElementById('stuModalCourse').value = '月極全日（1〜3年）';
         document.getElementById('stuModalTransport').checked = false;
         document.getElementById('stuModalBank').value = '';
+        document.getElementById('stuModalSpotRate').value = 1200;
       }
+      toggleSpotRateArea();
       showModal('studentConfigModal');
     }
 
@@ -5286,21 +5487,24 @@
       const name = document.getElementById('stuModalName').value.trim();
       if (!name) { alert('名前を入力してください'); return; }
 
-      const school = document.getElementById('stuModalSchool').value;
-      const grade = document.getElementById('stuModalGrade').value;
-      const course = document.getElementById('stuModalCourse').value;
-      const transport = document.getElementById('stuModalTransport').checked;
-      const bankInfo = document.getElementById('stuModalBank').value;
+      const school      = document.getElementById('stuModalSchool').value;
+      const grade       = document.getElementById('stuModalGrade').value;
+      const course      = document.getElementById('stuModalCourse').value;
+      const transport   = document.getElementById('stuModalTransport').checked;
+      const bankInfo    = document.getElementById('stuModalBank').value;
+      const nameKana    = document.getElementById('stuModalNameKana').value.trim();
+      const spotDayRate = parseInt(document.getElementById('stuModalSpotRate').value) || 1200;
 
       if (idVal) {
         const s = STUDENTS.find(x => x.id === parseInt(idVal));
         if (s) {
           s.name = name; s.school = school; s.grade = grade; s.course = course;
-          s.transport = transport; s.bankInfo = bankInfo;
+          s.transport = transport; s.bankInfo = bankInfo; s.nameKana = nameKana;
+          s.spotDayRate = spotDayRate;
         }
       } else {
         const newId = STUDENTS.length > 0 ? Math.max(...STUDENTS.map(x => x.id)) + 1 : 1;
-        STUDENTS.push({ id: newId, name, school, grade, course, transport, lunch: false, bankInfo, nameKana: '' });
+        STUDENTS.push({ id: newId, name, nameKana, school, grade, course, transport, lunch: false, bankInfo, spotDayRate });
       }
 
       localStorage.setItem('repeatStudentsData', JSON.stringify(STUDENTS));
