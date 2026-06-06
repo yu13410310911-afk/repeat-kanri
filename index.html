@@ -2142,6 +2142,10 @@
                 style="vertical-align:middle;margin-right:4px;"></i> スタッフ設定</div>
             <div class="payroll-tab" onclick="switchPayrollTab('list', this)"><i class="ph ph-clipboard-text"
                 style="vertical-align:middle;margin-right:4px;"></i> 月間支払い一覧</div>
+            <div class="payroll-tab" onclick="switchPayrollTab('annual', this)"><i class="ph ph-chart-bar"
+                style="vertical-align:middle;margin-right:4px;"></i> 年間集計</div>
+            <div class="payroll-tab" onclick="switchPayrollTab('history', this)"><i class="ph ph-trend-up"
+                style="vertical-align:middle;margin-right:4px;"></i> スタッフ別推移</div>
           </div>
 
           <!-- TAB 1: CALCULATION -->
@@ -2256,6 +2260,64 @@
             </div>
           </div>
 
+          <!-- TAB 4: ANNUAL SUMMARY -->
+          <div id="payroll-tab-annual" class="payroll-tab-content">
+            <div class="controls-bar" style="justify-content:space-between;">
+              <div style="display:flex;gap:12px;align-items:flex-end;">
+                <div>
+                  <label class="form-label">対象年度</label>
+                  <select id="annualYear" class="form-select" onchange="renderAnnualSummary()"></select>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-outline" onclick="exportAnnualCSV()"><i class="ph ph-download-simple"
+                    style="vertical-align:middle;margin-right:4px;"></i> CSV出力</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title"><i class="ph ph-chart-bar" style="vertical-align:middle;margin-right:4px;"></i>
+                  <span id="annualTitleLabel">年間給与集計</span></span>
+              </div>
+              <div class="table-wrap" id="annualTableWrap">
+                <!-- JS populated -->
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 5: STAFF HISTORY -->
+          <div id="payroll-tab-history" class="payroll-tab-content">
+            <div class="controls-bar" style="justify-content:space-between;">
+              <div style="display:flex;gap:12px;align-items:flex-end;">
+                <div>
+                  <label class="form-label">スタッフ</label>
+                  <select id="historyStaff" class="form-select" onchange="renderStaffHistory()"></select>
+                </div>
+                <div>
+                  <label class="form-label">表示期間（月数）</label>
+                  <select id="historyMonths" class="form-select" onchange="renderStaffHistory()">
+                    <option value="6">直近6ヶ月</option>
+                    <option value="12" selected>直近12ヶ月</option>
+                    <option value="24">直近24ヶ月</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-outline" onclick="exportHistoryCSV()"><i class="ph ph-download-simple"
+                    style="vertical-align:middle;margin-right:4px;"></i> CSV出力</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title"><i class="ph ph-trend-up" style="vertical-align:middle;margin-right:4px;"></i>
+                  <span id="historyTitleLabel">スタッフ別月別推移</span></span>
+              </div>
+              <div id="historyContent">
+                <!-- JS populated -->
+              </div>
+            </div>
+          </div>
+
           <!-- TAB 3: LIST -->
           <div id="payroll-tab-list" class="payroll-tab-content">
             <div class="controls-bar" style="justify-content:space-between;">
@@ -2263,8 +2325,12 @@
                 <label class="form-label">対象年月</label>
                 <input type="month" id="listMonth" class="form-input" onchange="renderPayrollList()" />
               </div>
-              <div><button class="btn btn-outline" onclick="generateAllPDF()"><i class="ph ph-file-text"
-                    style="vertical-align:middle;margin-right:4px;"></i> 全員分PDF出力(経理提出用)</button></div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-outline" onclick="exportPayrollCSV()"><i class="ph ph-download-simple"
+                    style="vertical-align:middle;margin-right:4px;"></i> CSV出力</button>
+                <button class="btn btn-outline" onclick="generateAllPDF()"><i class="ph ph-file-text"
+                    style="vertical-align:middle;margin-right:4px;"></i> 全員分PDF出力(経理提出用)</button>
+              </div>
             </div>
             <div class="card">
               <div class="card-header"><span class="card-title"><i class="ph ph-clipboard-text"
@@ -4650,7 +4716,277 @@
       if (tabId === 'list') {
         document.getElementById('listMonth').value = document.getElementById('targetMonth').value;
         renderPayrollList();
+      } else if (tabId === 'annual') {
+        initAnnualYearSelect();
+        renderAnnualSummary();
+      } else if (tabId === 'history') {
+        populateHistoryStaffSelect();
+        renderStaffHistory();
       }
+    }
+
+    // ===== CSV出力（月間支払い一覧） =====
+    function exportPayrollCSV() {
+      const ym = document.getElementById('listMonth').value;
+      if (!ym) return;
+      const [y, m] = ym.split('-');
+      let csv = '﻿'; // BOM
+      csv += 'スタッフ名,出勤日数,勤務時間(h),基本給与,送迎代金,交通費,支払総額\n';
+      let gAll = 0;
+      staffList.forEach(staff => {
+        const t = getStaffTotals(staff.id, ym);
+        if (t.days === 0) return;
+        csv += `"${staff.name}",${t.days},${t.hours.toFixed(2)},${t.basePay},${t.tripsPay},${t.transportPay},${t.totalPay}\n`;
+        gAll += t.totalPay;
+      });
+      csv += `合計,,,,,, ${gAll}\n`;
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `給与一覧_${y}年${parseInt(m)}月.csv`; a.click();
+    }
+
+    // ===== 年間集計 =====
+    function initAnnualYearSelect() {
+      const sel = document.getElementById('annualYear');
+      if (!sel) return;
+      // shiftDataから存在する年を収集
+      const years = new Set();
+      Object.keys(shiftData).forEach(ym => years.add(ym.split('-')[0]));
+      const curYear = String(new Date().getFullYear());
+      years.add(curYear);
+      // 年度ベース（4月始まり）
+      const fiscalYears = new Set();
+      years.forEach(y => { fiscalYears.add(y); fiscalYears.add(String(parseInt(y) - 1)); });
+      const sorted = [...fiscalYears].sort((a, b) => b - a).slice(0, 5);
+      const current = sel.value || curYear;
+      sel.innerHTML = sorted.map(y => `<option value="${y}" ${y === current ? 'selected' : ''}>${y}年度（${y}/4〜${parseInt(y)+1}/3）</option>`).join('');
+    }
+
+    function renderAnnualSummary() {
+      const baseYear = parseInt(document.getElementById('annualYear')?.value || new Date().getFullYear());
+      document.getElementById('annualTitleLabel').textContent = `${baseYear}年度 年間給与集計（${baseYear}/4〜${baseYear+1}/3）`;
+
+      // 月リスト（4月〜翌3月）
+      const months = [];
+      for (let i = 4; i <= 12; i++) months.push(`${baseYear}-${String(i).padStart(2,'0')}`);
+      for (let i = 1; i <= 3; i++) months.push(`${baseYear+1}-${String(i).padStart(2,'0')}`);
+
+      // ヘッダー
+      let thead = '<tr><th style="white-space:nowrap;">スタッフ名</th>';
+      months.forEach(ym => {
+        const [y, m] = ym.split('-');
+        thead += `<th style="text-align:right;white-space:nowrap;">${parseInt(m)}月</th>`;
+      });
+      thead += '<th style="text-align:right;background:#EFF6FF;color:var(--primary-dark);white-space:nowrap;">年間合計</th></tr>';
+
+      // 行
+      let tbody = '';
+      let monthTotals = new Array(months.length).fill(0);
+      let grandTotal = 0;
+
+      // データがある月のチェック
+      const hasAnyData = staffList.some(s => months.some(ym => (shiftData[ym]?.[s.id]) && Object.values(shiftData[ym][s.id]).some(d => d.hours > 0)));
+
+      if (!hasAnyData) {
+        document.getElementById('annualTableWrap').innerHTML = '<p style="padding:20px;color:var(--text-light);text-align:center;">この年度のデータがありません</p>';
+        return;
+      }
+
+      staffList.forEach(staff => {
+        let rowTotal = 0;
+        let rowCells = '';
+        months.forEach((ym, i) => {
+          const t = getStaffTotals(staff.id, ym);
+          const val = t.totalPay;
+          rowTotal += val;
+          monthTotals[i] += val;
+          const color = val > 0 ? 'color:var(--text);' : 'color:#CBD5E1;';
+          rowCells += `<td style="text-align:right;${color}">${val > 0 ? '¥'+val.toLocaleString() : '-'}</td>`;
+        });
+        if (rowTotal === 0) return; // 勤務なしスタッフは非表示
+        grandTotal += rowTotal;
+        tbody += `<tr>
+          <td style="font-weight:600;white-space:nowrap;">${staff.name}</td>
+          ${rowCells}
+          <td style="text-align:right;font-weight:700;color:var(--primary-dark);background:#EFF6FF;">¥${rowTotal.toLocaleString()}</td>
+        </tr>`;
+      });
+
+      // 合計行
+      let footCells = months.map((_, i) => {
+        const v = monthTotals[i];
+        return `<td style="text-align:right;font-weight:600;">${v > 0 ? '¥'+v.toLocaleString() : '-'}</td>`;
+      }).join('');
+      const tfoot = `<tfoot style="background:#F8FAFC;font-weight:700;">
+        <tr><td>【月計】</td>${footCells}<td style="text-align:right;color:var(--primary);font-size:15px;background:#EFF6FF;">¥${grandTotal.toLocaleString()}</td></tr>
+      </tfoot>`;
+
+      document.getElementById('annualTableWrap').innerHTML = `
+        <table class="config-table" style="min-width:800px;">
+          <thead>${thead}</thead>
+          <tbody>${tbody}</tbody>
+          ${tfoot}
+        </table>`;
+    }
+
+    function exportAnnualCSV() {
+      const baseYear = parseInt(document.getElementById('annualYear')?.value || new Date().getFullYear());
+      const months = [];
+      for (let i = 4; i <= 12; i++) months.push(`${baseYear}-${String(i).padStart(2,'0')}`);
+      for (let i = 1; i <= 3; i++) months.push(`${baseYear+1}-${String(i).padStart(2,'0')}`);
+
+      let csv = '﻿';
+      const mLabels = months.map(ym => `${parseInt(ym.split('-')[1])}月`).join(',');
+      csv += `スタッフ名,${mLabels},年間合計\n`;
+
+      let monthTotals = new Array(months.length).fill(0);
+      let grandTotal = 0;
+      staffList.forEach(staff => {
+        let rowTotal = 0;
+        const vals = months.map((ym, i) => {
+          const v = getStaffTotals(staff.id, ym).totalPay;
+          monthTotals[i] += v; rowTotal += v; return v;
+        });
+        if (rowTotal === 0) return;
+        grandTotal += rowTotal;
+        csv += `"${staff.name}",${vals.join(',')},${rowTotal}\n`;
+      });
+      csv += `月計,${monthTotals.join(',')},${grandTotal}\n`;
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `年間給与集計_${baseYear}年度.csv`; a.click();
+    }
+
+    // ===== スタッフ別月別推移 =====
+    function populateHistoryStaffSelect() {
+      const sel = document.getElementById('historyStaff');
+      if (!sel || sel.options.length > 0) return;
+      staffList.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id; opt.textContent = s.name;
+        sel.appendChild(opt);
+      });
+    }
+
+    function renderStaffHistory() {
+      const staffId = document.getElementById('historyStaff')?.value;
+      const numMonths = parseInt(document.getElementById('historyMonths')?.value || 12);
+      const staff = staffList.find(s => String(s.id) === String(staffId));
+      if (!staff) { document.getElementById('historyContent').innerHTML = '<p style="padding:20px;color:var(--text-light);text-align:center;">スタッフを選択してください</p>'; return; }
+
+      document.getElementById('historyTitleLabel').textContent = `${staff.name} の月別推移`;
+
+      // 直近N月のリストを生成（新しい順）
+      const months = [];
+      const now = new Date();
+      for (let i = 0; i < numMonths; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+      }
+
+      const rows = months.map(ym => {
+        const t = getStaffTotals(staff.id, ym);
+        const [y, m] = ym.split('-');
+        return { ym, label: `${y}年${parseInt(m)}月`, ...t };
+      }).filter(r => r.days > 0);
+
+      if (rows.length === 0) {
+        document.getElementById('historyContent').innerHTML = '<p style="padding:20px;color:var(--text-light);text-align:center;">勤務データがありません</p>';
+        return;
+      }
+
+      // 最大値（グラフバー用）
+      const maxPay = Math.max(...rows.map(r => r.totalPay), 1);
+
+      // サマリーカード
+      const avgPay = Math.round(rows.reduce((s, r) => s + r.totalPay, 0) / rows.length);
+      const maxRow = rows.reduce((a, b) => a.totalPay > b.totalPay ? a : b);
+      const minRow = rows.reduce((a, b) => a.totalPay < b.totalPay ? a : b);
+      const totalSum = rows.reduce((s, r) => s + r.totalPay, 0);
+
+      const summaryHtml = `
+        <div style="display:flex;gap:12px;flex-wrap:wrap;padding:16px;background:#F8FAFC;border-radius:12px;margin-bottom:16px;">
+          <div style="flex:1;min-width:120px;text-align:center;">
+            <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;">対象期間合計</div>
+            <div style="font-size:20px;font-weight:700;color:var(--primary-dark);">¥${totalSum.toLocaleString()}</div>
+          </div>
+          <div style="flex:1;min-width:120px;text-align:center;">
+            <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;">月平均</div>
+            <div style="font-size:20px;font-weight:700;">¥${avgPay.toLocaleString()}</div>
+          </div>
+          <div style="flex:1;min-width:120px;text-align:center;">
+            <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;">最高月</div>
+            <div style="font-size:16px;font-weight:700;color:#16a34a;">¥${maxRow.totalPay.toLocaleString()}</div>
+            <div style="font-size:11px;color:var(--text-light);">${maxRow.label}</div>
+          </div>
+          <div style="flex:1;min-width:120px;text-align:center;">
+            <div style="font-size:11px;color:var(--text-light);margin-bottom:4px;">最低月</div>
+            <div style="font-size:16px;font-weight:700;color:#dc2626;">¥${minRow.totalPay.toLocaleString()}</div>
+            <div style="font-size:11px;color:var(--text-light);">${minRow.label}</div>
+          </div>
+        </div>`;
+
+      // 棒グラフ + 表
+      let tableRows = rows.map(r => {
+        const barW = Math.round((r.totalPay / maxPay) * 100);
+        const tripsCell = r.tripsPay > 0 ? `¥${r.tripsPay.toLocaleString()} <span style="font-size:10px;color:#888;">(${r.totalTrips}回)</span>` : '-';
+        return `<tr>
+          <td style="white-space:nowrap;font-weight:600;">${r.label}</td>
+          <td style="text-align:right;">${r.days}日</td>
+          <td style="text-align:right;">${r.hours.toFixed(1)}h</td>
+          <td style="text-align:right;">¥${r.basePay.toLocaleString()}</td>
+          <td style="text-align:right;">${tripsCell}</td>
+          <td style="text-align:right;">¥${r.transportPay.toLocaleString()}</td>
+          <td style="text-align:right;font-weight:700;color:var(--primary-dark);">¥${r.totalPay.toLocaleString()}</td>
+          <td style="width:120px;padding-right:8px;">
+            <div style="background:#EFF6FF;border-radius:4px;height:14px;position:relative;">
+              <div style="background:var(--primary);width:${barW}%;height:100%;border-radius:4px;transition:width .3s;"></div>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('historyContent').innerHTML = summaryHtml + `
+        <div class="table-wrap">
+          <table class="config-table">
+            <thead><tr>
+              <th>年月</th><th style="text-align:right;">出勤</th><th style="text-align:right;">時間</th>
+              <th style="text-align:right;">基本給</th><th style="text-align:right;">送迎</th>
+              <th style="text-align:right;">交通費</th><th style="text-align:right;color:var(--primary-dark);">支払総額</th>
+              <th></th>
+            </tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function exportHistoryCSV() {
+      const staffId = document.getElementById('historyStaff')?.value;
+      const numMonths = parseInt(document.getElementById('historyMonths')?.value || 12);
+      const staff = staffList.find(s => String(s.id) === String(staffId));
+      if (!staff) return;
+      const months = [];
+      const now = new Date();
+      for (let i = 0; i < numMonths; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+      }
+      let csv = '﻿';
+      csv += `スタッフ: ${staff.name}\n`;
+      csv += '年月,出勤日数,勤務時間(h),基本給与,送迎代金,交通費,支払総額\n';
+      let total = 0;
+      months.forEach(ym => {
+        const t = getStaffTotals(staff.id, ym);
+        if (t.days === 0) return;
+        const [y, m] = ym.split('-');
+        csv += `${y}年${parseInt(m)}月,${t.days},${t.hours.toFixed(2)},${t.basePay},${t.tripsPay},${t.transportPay},${t.totalPay}\n`;
+        total += t.totalPay;
+      });
+      csv += `合計,,,,,, ${total}\n`;
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `給与推移_${staff.name}.csv`; a.click();
     }
 
     function initPayrollSystem() {
