@@ -2902,6 +2902,17 @@
     // 支払いデータ
     let paymentData = {};
 
+    function loadPaymentDataLocal() {
+      try {
+        const saved = localStorage.getItem('repeatPaymentData');
+        if (saved) Object.assign(paymentData, JSON.parse(saved));
+      } catch(e) { console.warn('paymentData load error:', e); }
+    }
+
+    function savePaymentDataLocal() {
+      localStorage.setItem('repeatPaymentData', JSON.stringify(paymentData));
+    }
+
     const SCHEDULE = [
       { date: '4月20日', content: '4月・5月月謝、年会費' },
       { date: '5月20日', content: '6月月謝 ＋ 4月利用料（特別：春休み保育料）' },
@@ -3238,10 +3249,12 @@
       const attDateEl = document.getElementById('attDate');
       if (attDateEl) attDateEl.value = new Date().toISOString().split('T')[0];
 
-      // Init payment data
+      // Init payment data（localStorageから読込 → 不足分を未引落で補完）
+      loadPaymentDataLocal();
+      const curYM = getCurrentYM();
       STUDENTS.forEach(s => {
         paymentData[s.id] = paymentData[s.id] || {};
-        paymentData[s.id]['2026-03'] = paymentData[s.id]['2026-03'] || { status: s.id <= 2 ? '引落済' : '未引落' };
+        paymentData[s.id][curYM] = paymentData[s.id][curYM] || { status: '未引落' };
       });
 
       // Populate selects
@@ -3270,12 +3283,33 @@
       currentUser = null;
     }
 
+    // 現在の年月を YYYY-MM 形式で返す
+    function getCurrentYM() {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    // 過去 pastCount ヶ月 〜 未来 futureCount ヶ月の年月リストを生成
+    function generateMonthList(pastCount = 6, futureCount = 3) {
+      const list = [];
+      const now = new Date();
+      for (let i = -pastCount; i <= futureCount; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+        list.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      }
+      return list;
+    }
+
     function populateMonthSelects() {
-      const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
-      const labels = ['2026年1月', '2026年2月', '2026年3月', '2026年4月', '2026年5月'];
+      const currentYM = getCurrentYM();
+      const months = generateMonthList(6, 3);
       ['billingMonth', 'paymentMonth'].forEach(id => {
         const sel = document.getElementById(id);
-        sel.innerHTML = months.map((m, i) => `<option value="${m}" ${m === '2026-03' ? 'selected' : ''}>${labels[i]}</option>`).join('');
+        if (!sel) return;
+        sel.innerHTML = months.map(m => {
+          const [y, mo] = m.split('-');
+          return `<option value="${m}" ${m === currentYM ? 'selected' : ''}>${y}年${parseInt(mo)}月</option>`;
+        }).join('');
       });
     }
 
@@ -3289,42 +3323,52 @@
 
     // ===== DASHBOARD =====
     function renderDashboard() {
+      const dashYM = getCurrentYM();
+      const [dy, dm] = dashYM.split('-');
+
       document.getElementById('d-students').textContent = STUDENTS.length;
       const today = new Date().toISOString().split('T')[0];
+
+      // 今日の出欠（repeatSukumaneData から集計）
+      const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+      const todayRows = dataStore[today] || [];
       let present = 0, absent = 0;
-      STUDENTS.forEach(s => {
-        const att = (attendanceData[s.id] || {})[today];
-        if (att?.status === 'present') present++;
-        else if (att?.status === 'absent') absent++;
-      });
+      todayRows.forEach(r => { if (r.isAbsent) absent++; else present++; });
       document.getElementById('d-today-present').textContent = present;
       document.getElementById('d-today-absent').textContent = absent;
 
+      // 未引落件数（当月）
       let unpaid = 0;
       STUDENTS.forEach(s => {
-        if ((paymentData[s.id]?.['2026-03']?.status || '') === '未引落') unpaid++;
+        if ((paymentData[s.id]?.[dashYM]?.status || '未引落') === '未引落') unpaid++;
       });
       document.getElementById('d-unpaid').textContent = unpaid;
 
-      // Att summary
+      // 出席サマリー（当月）
       let html = '';
-      STUDENTS.forEach(s => {
-        const data = attendanceData[s.id] || {};
-        const days = Object.entries(data).filter(([d]) => d.startsWith('2026-03'));
-        const p = days.filter(([, v]) => v.status === 'present').length;
-        const a = days.filter(([, v]) => v.status === 'absent').length;
+      const schoolFilter = (currentUser?.role === 'admin') ? null : currentSchool;
+      let summaryStudents = schoolFilter ? STUDENTS.filter(s => s.school === schoolFilter) : STUDENTS;
+      summaryStudents.forEach(s => {
+        let p = 0, a = 0;
+        Object.keys(dataStore).forEach(date => {
+          if (!date.startsWith(dashYM)) return;
+          const r = (dataStore[date] || []).find(x => String(x.studentId) === String(s.id));
+          if (!r) return;
+          if (r.isAbsent) a++; else p++;
+        });
         html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
       <span style="font-weight:600;">${s.name}</span>
       <span>出席 <strong style="color:var(--success);">${p}日</strong> ／ 欠席 <strong style="color:var(--danger);">${a}日</strong></span>
     </div>`;
       });
-      document.getElementById('d-att-summary').innerHTML = html;
+      const attSummaryEl = document.getElementById('d-att-summary');
+      if (attSummaryEl) attSummaryEl.innerHTML = html || '<p style="color:var(--text-light);font-size:13px;">今月のデータはまだありません</p>';
 
-      // Billing summary
+      // 請求サマリー（当月）
       let totalAll = 0;
       let bHtml = '';
-      STUDENTS.forEach(s => {
-        const b = calcBilling(s.id, '2026-03');
+      summaryStudents.forEach(s => {
+        const b = calcBilling(s.id, dashYM);
         if (!b) return;
         totalAll += b.total;
         bHtml += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
@@ -3333,9 +3377,10 @@
     </div>`;
       });
       bHtml += `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;font-size:14px;font-weight:700;">
-    <span>合計</span><span style="color:var(--primary);font-size:18px;">¥${totalAll.toLocaleString()}</span>
+    <span>${dy}年${parseInt(dm)}月 合計</span><span style="color:var(--primary);font-size:18px;">¥${totalAll.toLocaleString()}</span>
   </div>`;
-      document.getElementById('d-billing-summary').innerHTML = bHtml;
+      const billingSummaryEl = document.getElementById('d-billing-summary');
+      if (billingSummaryEl) billingSummaryEl.innerHTML = bHtml;
     }
 
     // ===== ATTENDANCE =====
@@ -4042,8 +4087,8 @@
       const s = STUDENTS.find(x => x.id === studentId);
       if (!s) return;
 
-      // 月ごとの支払い履歴テーブルを生成
-      const months = ['2026-01', '2026-02', '2026-03', '2026-04'];
+      // 月ごとの支払い履歴テーブルを生成（直近6ヶ月）
+      const months = generateMonthList(5, 1);
       let historyHtml = `
     <table style="width:100%; font-size:13px; margin-top:16px; border-collapse:collapse;">
       <thead>
@@ -4054,7 +4099,7 @@
 
       months.forEach(m => {
         const pData = paymentData[s.id]?.[m];
-        const status = pData ? pData.status : (m >= '2026-04' ? '未引落' : (s.id <= 2 ? '引落済' : '未引落')); // デモ用の初期値補完
+        const status = pData ? pData.status : '未引落';
 
         // 基本料金の目安を計算
         const courseFeeMap = { '月極全日（1〜3年）': 14300, '月極全日（4〜6年）': 12100, '12日間コース': 11000 };
@@ -4255,7 +4300,8 @@
 
           STUDENTS.forEach(s => {
             paymentData[s.id] = paymentData[s.id] || {};
-            paymentData[s.id]['2026-03'] = paymentData[s.id]['2026-03'] || { status: '未引落' };
+            const _curYM = getCurrentYM();
+            paymentData[s.id][_curYM] = paymentData[s.id][_curYM] || { status: '未引落' };
           });
 
           const alertBox = document.getElementById('rosterAlert');
@@ -5031,10 +5077,20 @@
 
       const [y, m] = monthStr.split('-');
 
-      const t = getStaffTotals(currentUser.id, monthStr);
+      // staff_accounts の ID と staffList の ID が別管理なので、名前でも照合する
+      const nameNorm = n => (n || '').replace(/\s+/g, '');
+      let resolvedStaffId = currentUser.id;
+      const byId   = staffList.find(s => s.id === currentUser.id);
+      const byName = staffList.find(s => nameNorm(s.name) === nameNorm(currentUser.name));
+      if (!byId && byName) resolvedStaffId = byName.id;
 
-      if (t.days === 0) {
-        wrap.innerHTML = '<div class="empty-state"><div class="icon"><i class="ph ph-receipt" style="font-size:40px; color:#9CA3AF;"></i></div><p style="color:var(--text-light);">この月の勤務データはありません</p></div>';
+      const t = getStaffTotals(resolvedStaffId, monthStr);
+
+      if (t.days === 0 || !t.staff) {
+        const hint = staffList.length === 0
+          ? '<br><small style="font-size:11px;">管理者に「給与計算・シフト」→「スタッフ設定」でスタッフ登録を依頼してください</small>'
+          : '';
+        wrap.innerHTML = `<div class="empty-state"><div class="icon"><i class="ph ph-receipt" style="font-size:40px; color:#9CA3AF;"></i></div><p style="color:var(--text-light);">この月の勤務データはありません${hint}</p></div>`;
         return;
       }
 
@@ -5415,6 +5471,57 @@
       if (el) el.style.display = 'none';
     }
 
+    // ⑥ Supabaseから特定日・校舎の出欠データを読み込みlocalStorageにマージ
+    async function sbLoadAttendanceForDate(date, school) {
+      if (!_sb) return false;
+      try {
+        let q = _sb.from('attendance').select('*').eq('date', date);
+        if (school && school !== '全校舎') q = q.eq('school', school);
+        const { data, error } = await q;
+        if (error) throw error;
+        if (!data || data.length === 0) return false;
+
+        // Supabaseの行 → repeatSukumaneData 形式に変換
+        const converted = data.map(row => {
+          const student = STUDENTS.find(s => String(s.id) === String(row.student_id));
+          return {
+            studentId: row.student_id,
+            name:      student?.name  || '不明',
+            grade:     student?.grade || '未登録',
+            course:    student?.course || '不明',
+            school:    row.school || school,
+            isAbsent:     !!row.is_absent,
+            hasExtMorn:   !!row.has_morning_ext,
+            exitTime:     sbExtMinutesToExitTime(row.extension_minutes),
+            hasBento:     !!row.has_bento,
+            hasLargeBento: !!row.has_large_bento,
+            hasPotato:    !!row.has_potato,
+            hasLongHol:   !!row.is_long_holiday,
+            eventFee:     row.event_fee || 0,
+          };
+        });
+
+        // localStorageにマージ（同じ校舎のデータは上書き）
+        const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+        const existing = (dataStore[date] || []).filter(r => r.school !== school);
+        dataStore[date] = [...existing, ...converted];
+        localStorage.setItem('repeatSukumaneData', JSON.stringify(dataStore));
+        if (typeof syncSukumaneToDummyData === 'function') syncSukumaneToDummyData(dataStore);
+        console.log(`[Supabase] ${date}(${school}) 出欠データ ${converted.length}件 を同期しました`);
+        return true;
+      } catch(e) {
+        console.warn('[Supabase] 出欠データ読込エラー:', e.message);
+        return false;
+      }
+    }
+
+    // extension_minutes → 退室時刻文字列 (例: 30 → "19:00")
+    function sbExtMinutesToExitTime(minutes) {
+      if (!minutes || minutes <= 0) return '';
+      const total = 18 * 60 + 30 + Number(minutes);
+      return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+    }
+
     // ⑤ 延長時間の自動計算
     // 退室時刻 → 18:30以降の分数を30分単位で切り上げて返す
     function sbCalcExtMinutes(exitTime) {
@@ -5596,26 +5703,19 @@
       if (date) await sbUpsertAttendance(date);
     };
 
-    // populateMonthSelects をラップ: 固定月リストを現在月前後の動的生成に変更
-    const _origPopulateMonthSelects = window.populateMonthSelects;
-    window.populateMonthSelects = function () {
-      const now   = new Date();
-      const months = [], labels = [];
-      for (let i = -3; i <= 12; i++) {
-        const d   = new Date(now.getFullYear(), now.getMonth() + i, 1);
-        const ym  = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        const lbl = `${d.getFullYear()}年${d.getMonth() + 1}月`;
-        months.push(ym);
-        labels.push(lbl);
+    // renderAttendanceInput をラップ: 日付変更時にSupabaseから最新データを取得してマージ
+    const _origRenderAttendanceInput = window.renderAttendanceInput;
+    window.renderAttendanceInput = async function () {
+      const date = document.getElementById('attDate')?.value;
+      if (date && _sbReady) {
+        // localStorageに該当日・校舎のデータがない場合はSupabaseから取得
+        const localStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+        const localRows  = (localStore[date] || []).filter(r => r.school === currentSchool || !r.school);
+        if (localRows.length === 0) {
+          await sbLoadAttendanceForDate(date, currentSchool);
+        }
       }
-      const thisYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      ['billingMonth', 'paymentMonth'].forEach(id => {
-        const sel = document.getElementById(id);
-        if (!sel) return;
-        sel.innerHTML = months
-          .map((ym, i) => `<option value="${ym}" ${ym === thisYM ? 'selected' : ''}>${labels[i]}</option>`)
-          .join('');
-      });
+      if (_origRenderAttendanceInput) _origRenderAttendanceInput();
     };
 
     // =====================================================
