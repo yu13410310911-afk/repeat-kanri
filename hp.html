@@ -286,7 +286,7 @@
     .campus-s { background: var(--g50); }
     .campus-hd { margin-bottom: 60px; }
     .campus-grid {
-      display: grid; grid-template-columns: repeat(3, 1fr);
+      display: grid; grid-template-columns: repeat(2, 1fr);
       gap: 1px; background: var(--g200);
     }
     .campus-card { background: var(--white); }
@@ -305,6 +305,11 @@
       font-family: var(--en); font-size: 10px;
       letter-spacing: .2em; color: var(--g400);
       text-transform: uppercase; display: block; margin-bottom: 6px;
+    }
+    .campus-reading {
+      font-family: var(--sans); font-size: 11px; font-weight: 300;
+      color: var(--g400); letter-spacing: .12em;
+      display: block; margin-top: -18px; margin-bottom: 20px;
     }
     .campus-name {
       font-family: var(--serif); font-size: 26px;
@@ -603,7 +608,7 @@
   <div class="hero-strip">
     <div class="hero-strip-in">
       <div class="hero-stat">
-        <div class="hero-stat-n">3</div>
+        <div class="hero-stat-n">4</div>
         <div class="hero-stat-l">校舎展開中</div>
       </div>
       <div class="hero-stat">
@@ -677,7 +682,7 @@
     <div class="campus-hd reveal">
       <div class="sec-num">02</div>
       <span class="sec-tag">Our Campuses</span>
-      <h2 class="sec-h">3つの校舎で<br>お子さまをお待ちしています</h2>
+      <h2 class="sec-h">4つの校舎で<br>お子さまをお待ちしています</h2>
     </div>
 
     <div class="campus-grid">
@@ -685,11 +690,12 @@
       <!-- 大高校 -->
       <div class="campus-card reveal">
         <div class="campus-img">
-          <span class="campus-img-lbl">Daiko Campus</span>
+          <span class="campus-img-lbl">Otaka Campus</span>
         </div>
         <div class="campus-body">
           <span class="campus-region">Kurashiki</span>
           <div class="campus-name">大高校</div>
+          <span class="campus-reading">おおたか</span>
           <div class="campus-rows">
             <div class="campus-row">
               <span class="campus-row-k">Addr</span>
@@ -753,11 +759,12 @@
       <!-- 中洲校 -->
       <div class="campus-card reveal">
         <div class="campus-img">
-          <span class="campus-img-lbl">Nakazu Campus</span>
+          <span class="campus-img-lbl">Nakasu Campus</span>
         </div>
         <div class="campus-body">
           <span class="campus-region">Kurashiki</span>
           <div class="campus-name">中洲校</div>
+          <span class="campus-reading">なかす</span>
           <div class="campus-rows">
             <div class="campus-row">
               <span class="campus-row-k">Addr</span>
@@ -780,6 +787,41 @@
           <div class="campus-acts">
             <button class="btn btn-sm" onclick="selectCampus('中洲校')">見学を予約</button>
             <a href="https://maps.google.com/?q=倉敷市水江1594-77" target="_blank" rel="noopener" class="btn btn-sm">地図を見る</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 長尾校 -->
+      <div class="campus-card reveal">
+        <div class="campus-img">
+          <span class="campus-img-lbl">Nagao Campus</span>
+        </div>
+        <div class="campus-body">
+          <span class="campus-region">Kurashiki</span>
+          <div class="campus-name">長尾校</div>
+          <span class="campus-reading">ながお</span>
+          <div class="campus-rows">
+            <div class="campus-row">
+              <span class="campus-row-k">Addr</span>
+              <span class="campus-row-v">倉敷市玉島長尾3070（長尾小学校 徒歩1分）</span>
+            </div>
+            <div class="campus-row">
+              <span class="campus-row-k">Hours</span>
+              <span class="campus-row-v">放課後〜18:30（延長応相談）</span>
+            </div>
+            <div class="campus-row">
+              <span class="campus-row-k">Grade</span>
+              <span class="campus-row-v">小学1年生〜6年生</span>
+            </div>
+            <div class="campus-row">
+              <span class="campus-row-k">Bus</span>
+              <span class="campus-row-v">送迎対応（要相談）</span>
+            </div>
+          </div>
+          <a href="tel:086-441-3572" class="campus-tel">086-441-3572</a>
+          <div class="campus-acts">
+            <button class="btn btn-sm" onclick="selectCampus('長尾校')">見学を予約</button>
+            <a href="https://maps.google.com/?q=倉敷市玉島長尾3070" target="_blank" rel="noopener" class="btn btn-sm">地図を見る</a>
           </div>
         </div>
       </div>
@@ -822,7 +864,7 @@
             <tr>
               <td>
                 <div class="price-name">12日間コース</div>
-                <div class="price-note">年度内12日まで利用可能</div>
+                <div class="price-note">月12日まで利用可能</div>
               </td>
               <td class="price-grade">全学年</td>
               <td class="price-amt">¥11,000</td>
@@ -840,7 +882,7 @@
         <div class="pricing-notes">
           <p>
             ※ 入会金 ¥5,500（兄弟・紹介割引は ¥3,300）、年会費 ¥4,400（月極・12日コース、毎年4月徴収）<br>
-            ※ 延長保育 ¥550／30分（7:30〜8:00、18:30〜19:30）、送迎 ¥2,750、土曜日 ¥1,650／回<br>
+            ※ 延長保育 ¥550／30分（7:30〜8:00、18:30〜19:30）、送迎 ¥2,750／月、土曜日 ¥1,650／回<br>
             ※ 夏休み全期間：1〜3年 ¥39,600 / 4〜6年 ¥33,000（特別コース料金）<br>
             ※ 月謝は原則ゆうちょ銀行指定口座からの引き落としとなります。<br>
             ※ 料金は予告なく変更になる場合があります。最新情報は直接校舎にご確認ください。
@@ -926,7 +968,7 @@
             <span class="faq-q-txt">12日間コースとはどんなコースですか？</span>
             <span class="faq-icon">＋</span>
           </div>
-          <div class="faq-a"><div class="faq-a-in">年度内（4月〜翌3月）に12日まで利用できるコースです（月額 ¥11,000）。週1〜2回だけ利用したい方や、習い事と組み合わせたい方に人気です。12日を超えた分は特別コース料金（平日 ¥2,200／回、休日 ¥3,300／回）が適用されます。</div></div>
+          <div class="faq-a"><div class="faq-a-in">1ヶ月に最大12日まで利用できるコースです（月額 ¥11,000）。週1〜2回だけ利用したい方や、習い事と組み合わせたい方に人気です。12日を超えた分は特別コース料金（平日 ¥2,200／回、休日 ¥3,300／回）が適用されます。</div></div>
         </div>
 
       </div>
@@ -976,9 +1018,10 @@
                 <label class="f-label" for="campus">希望校舎<span class="req">必須</span></label>
                 <select id="campus" class="f-ctrl">
                   <option value="">選択してください</option>
-                  <option value="大高校">大高校（倉敷市西中新田）</option>
-                  <option value="御南校">御南校（岡山市北区今保）</option>
-                  <option value="中洲校">中洲校（倉敷市水江）</option>
+                  <option value="大高校">大高校・おおたか（倉敷市西中新田）</option>
+                  <option value="御南校">御南校・みなみ（岡山市北区今保）</option>
+                  <option value="中洲校">中洲校・なかす（倉敷市水江）</option>
+                  <option value="長尾校">長尾校・ながお（倉敷市玉島長尾）</option>
                 </select>
                 <span class="f-err" id="e_campus"></span>
               </div>
@@ -1017,13 +1060,13 @@
 <!-- ===== FOOTER ===== -->
 <footer>
   <div class="wrap">
-    <div class="foot-top">
+    <div class="foot-top" style="grid-template-columns:2fr 1fr 1fr;">
       <div class="foot-brand">
         <span class="foot-brand-name">リピート学童保育</span>
         <p>働くお父さん・お母さんを全力でサポート。<br>安心・安全・楽しい放課後の居場所として<br>岡山・倉敷エリアで展開しています。</p>
       </div>
       <div class="foot-col">
-        <span class="foot-col-h">大高校</span>
+        <span class="foot-col-h">大高校（おおたか）</span>
         <ul>
           <li>倉敷市西中新田24-1</li>
           <li><a href="tel:086-431-2058">086-431-2058</a></li>
@@ -1031,7 +1074,7 @@
         </ul>
       </div>
       <div class="foot-col">
-        <span class="foot-col-h">御南校</span>
+        <span class="foot-col-h">御南校（みなみ）</span>
         <ul>
           <li>岡山市北区今保237-11</li>
           <li><a href="tel:080-6956-9913">080-6956-9913</a></li>
@@ -1039,11 +1082,19 @@
         </ul>
       </div>
       <div class="foot-col">
-        <span class="foot-col-h">中洲校</span>
+        <span class="foot-col-h">中洲校（なかす）</span>
         <ul>
           <li>倉敷市水江1594-77</li>
           <li><a href="tel:086-465-2629">086-465-2629</a></li>
           <li><a href="https://maps.google.com/?q=倉敷市水江1594-77" target="_blank" rel="noopener">地図を見る</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <span class="foot-col-h">長尾校（ながお）</span>
+        <ul>
+          <li>倉敷市玉島長尾3070</li>
+          <li><a href="tel:086-441-3572">086-441-3572</a></li>
+          <li><a href="https://maps.google.com/?q=倉敷市玉島長尾3070" target="_blank" rel="noopener">地図を見る</a></li>
         </ul>
       </div>
     </div>
