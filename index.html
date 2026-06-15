@@ -1625,6 +1625,37 @@
       }
     }
 
+    /* ===== 手入力モード カレンダー ===== */
+    .manual-day-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .manual-day-cell {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 10px 10px;
+      cursor: pointer;
+      background: var(--white);
+      transition: box-shadow .2s, border-color .2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-height: 86px;
+    }
+    .manual-day-cell:hover { box-shadow: 0 2px 8px rgba(0,0,0,.12); border-color: var(--primary); }
+    .manual-day-cell.has-data { border-color: #16a34a; background: #f0fdf4; }
+    .manual-day-cell.has-conflict { border-color: #d97706; background: #fffbeb; }
+    .manual-day-cell.is-sat .manual-day-dow { color: #2563eb; }
+    .manual-day-num { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
+    .manual-day-dow { font-size: 11px; color: var(--text-light); font-weight: 500; }
+    .manual-day-status {
+      font-size: 18px; margin-top: 4px;
+    }
+    .manual-day-count { font-size: 10px; color: var(--text-light); }
+
     @keyframes spin {
       from { transform: rotate(0deg); }
       to   { transform: rotate(360deg); }
@@ -1867,6 +1898,98 @@
         </div>
 
         <!-- BILLING -->
+        <!-- ===== 手入力モード（遡り入力）===== -->
+        <div class="page" id="page-manual-input">
+
+          <!-- カレンダービュー -->
+          <div id="manualCalendarView">
+            <div class="card" style="margin-bottom:20px;">
+              <div class="card-header">
+                <span class="card-title"><i class="ph ph-note-pencil" style="vertical-align:middle;margin-right:6px;"></i>手入力モード — 月間遡り入力</span>
+              </div>
+              <div class="card-body">
+                <p style="font-size:13px;color:var(--text-light);margin-bottom:16px;">
+                  CSVを保存し忘れた月の出欠を、紙の出席簿を見ながら日付ごとに入力できます。<br>
+                  入力したデータは「月謝計算・請求」ページに自動的に反映されます。
+                </p>
+                <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
+                  <select id="manualMonth" class="form-select" style="width:160px;"></select>
+                  <select id="manualSchool" class="form-select" style="width:140px;">
+                    <option value="中洲校">中洲校</option>
+                    <option value="大高校">大高校</option>
+                    <option value="御南校">御南校</option>
+                    <option value="長尾校">長尾校</option>
+                  </select>
+                  <button class="btn btn-primary btn-sm" onclick="renderManualCalendar()">
+                    <i class="ph ph-calendar" style="vertical-align:middle;margin-right:4px;"></i>表示
+                  </button>
+                </div>
+                <div id="manualProgressBar" style="display:none;margin-bottom:20px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-size:13px;font-weight:600;color:var(--text);" id="manualProgressLabel">0 / 0日 入力済</span>
+                    <span style="font-size:11px;color:var(--text-light);" id="manualProgressPct">0%</span>
+                  </div>
+                  <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
+                    <div id="manualProgressFill" style="height:100%;background:var(--primary);transition:width .4s;width:0%;border-radius:3px;"></div>
+                  </div>
+                </div>
+                <div id="manualCalendarGrid"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 日別入力ビュー（openManualDay で表示） -->
+          <div id="manualDayView" style="display:none;">
+            <!-- 手入力バナー（JS で内容を更新） -->
+            <div id="manualBanner" style="background:#fef9ec;border:1.5px solid #f0c85a;border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <i class="ph ph-note-pencil" style="color:#b45309;font-size:18px;"></i>
+                <strong style="color:#78350f;font-size:13px;">手入力モード</strong>
+                <span id="manualBannerDate" style="color:#92400e;font-size:13px;"></span>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn btn-outline btn-sm" id="manualPrevBtn" onclick="manualNavDay(-1)">← 前日</button>
+                <button class="btn btn-outline btn-sm" id="manualNextBtn" onclick="manualNavDay(1)">次日 →</button>
+                <button class="btn btn-sm" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;" onclick="setAllPresentManual()">
+                  <i class="ph ph-check-circle" style="vertical-align:middle;margin-right:3px;"></i>全員出席
+                </button>
+                <button class="btn btn-outline btn-sm" onclick="exitManualMode()">
+                  <i class="ph ph-arrow-left" style="vertical-align:middle;margin-right:3px;"></i>カレンダーへ
+                </button>
+              </div>
+            </div>
+
+            <!-- 長期休業日・イベント料金 -->
+            <div style="margin-bottom:16px;padding:12px 16px;background:var(--bg-light);border:1px solid var(--border);border-radius:8px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer;">
+                <input type="checkbox" id="manualIsLongHol" style="transform:scale(1.2);" onchange="applyLongHolManual(this.checked)"> 長期休業日
+              </label>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:13px;font-weight:600;">イベント料金</span>
+                <input type="number" id="manualEventFee" class="form-input" style="width:90px;padding:6px;" placeholder="0" min="0" />
+                <span style="font-size:13px;">円</span>
+              </div>
+            </div>
+
+            <!-- 出欠カード（既存の attInputList を流用） -->
+            <div class="card">
+              <div class="card-body" style="padding-top:0;">
+                <div id="manualAttList"></div>
+              </div>
+            </div>
+
+            <!-- 保存ボタン -->
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+              <button class="btn btn-outline" onclick="exitManualMode()">← カレンダーへ戻る</button>
+              <button class="btn btn-primary" onclick="saveManualDay()">
+                <i class="ph ph-floppy-disk" style="vertical-align:middle;margin-right:4px;"></i>保存して次の日へ
+              </button>
+            </div>
+          </div>
+
+        </div>
+        <!-- ===== /手入力モード ===== -->
+
         <div class="page" id="page-billing">
 
           <!-- CSV Export Settings Card -->
@@ -2696,6 +2819,25 @@
     </div>
   </div>
 
+  <!-- 手入力モード 衝突確認モーダル -->
+  <div class="modal-overlay" id="manualConflictModal" onclick="if(event.target===this)closeModal('manualConflictModal')">
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-header">
+        <span class="modal-title"><i class="ph ph-warning" style="color:#d97706;margin-right:6px;vertical-align:middle;"></i>既存データとの差異を確認</span>
+        <button class="modal-close" onclick="closeModal('manualConflictModal')">✕</button>
+      </div>
+      <div class="modal-body" id="manualConflictBody" style="max-height:460px;overflow-y:auto;"></div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:10px;">
+        <button class="btn btn-outline" onclick="revertManualSave()">
+          <i class="ph ph-arrow-counter-clockwise" style="vertical-align:middle;margin-right:4px;"></i>元のデータに戻す
+        </button>
+        <button class="btn btn-primary" onclick="closeModal('manualConflictModal');updateManualCalendarAfterSave()">
+          <i class="ph ph-check" style="vertical-align:middle;margin-right:4px;"></i>手入力を採用してこのまま進む
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- STUDENT DETAIL MODAL -->
   <div class="modal-overlay" id="studentDetailModal">
     <div class="modal">
@@ -3351,6 +3493,7 @@
         { id: 'attendance-admin', icon: '<i class="ph ph-check-circle" style="font-size:18px;"></i>', title: '当日の出欠入力', page: 'page-attendance' },
         { id: 'reports', icon: '<i class="ph ph-envelope-simple" style="font-size:18px;"></i>', title: '現場からの日報', page: 'page-reports-admin' },
         { id: 'billing', icon: '<i class="ph ph-currency-jpy" style="font-size:18px;"></i>', title: '月謝計算・請求', page: 'page-billing' },
+        { id: 'manual-input', icon: '<i class="ph ph-note-pencil" style="font-size:18px;"></i>', title: '手入力モード（遡り入力）', page: 'page-manual-input' },
         { id: 'payment', icon: '<i class="ph ph-credit-card" style="font-size:18px;"></i>', title: '支払い状況', page: 'page-payment' },
         { id: 'roster', icon: '<i class="ph ph-users" style="font-size:18px;"></i>', title: '生徒名簿管理', page: 'page-roster' },
         { id: 'payroll', icon: '<i class="ph ph-pencil-simple" style="font-size:18px;"></i>', title: '給与計算・シフト', page: 'page-payroll' },
@@ -3425,7 +3568,8 @@
           'manuals-admin': 'マニュアル管理', 'page-manuals-admin': 'マニュアル管理',
           'manuals-staff': 'マニュアル参照', 'page-manuals-staff': 'マニュアル参照',
           'roster-staff': '生徒一覧（確認用）', 'page-roster-staff': '生徒一覧（確認用）',
-          'dismissal': '下校時刻設定', 'page-dismissal': '下校時刻設定'
+          'dismissal': '下校時刻設定', 'page-dismissal': '下校時刻設定',
+          'manual-input': '手入力モード（遡り入力）', 'page-manual-input': '手入力モード（遡り入力）'
         };
         title = titles[pageId] || '';
       }
@@ -6615,6 +6759,477 @@
       }
       if (_origRenderAttendanceInput) _origRenderAttendanceInput();
     };
+
+    // =====================================================
+    // ===== 手入力モード（遡り入力）=====
+    // =====================================================
+
+    let _manualCurrentDate = '';      // 現在開いている日付 'YYYY-MM-DD'
+    let _manualSchool = '';           // 選択中校舎
+    let _manualSnapshot = [];         // 保存前の既存データ（衝突検出用）
+    let _manualLastSaved = null;      // 直前保存データ（取り消し用）
+
+    // ページ表示時に月セレクタ初期化
+    function initManualInputPage() {
+      const sel = document.getElementById('manualMonth');
+      if (!sel || sel.options.length > 0) return;
+      const now = new Date();
+      for (let i = 0; i < 13; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+        const opt = document.createElement('option');
+        opt.value = val; opt.textContent = label;
+        if (i === 1) opt.selected = true; // デフォルト: 先月
+        sel.appendChild(opt);
+      }
+    }
+
+    // 月間カレンダー描画
+    function renderManualCalendar() {
+      initManualInputPage();
+      const month = document.getElementById('manualMonth').value;
+      const school = document.getElementById('manualSchool').value;
+      if (!month || !school) return;
+      _manualSchool = school;
+
+      const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+      const [year, mon] = month.split('-').map(Number);
+      const daysInMonth = new Date(year, mon, 0).getDate();
+      const HOLIDAYS = getJpHolidays(year, mon);
+
+      let doneCount = 0, totalCount = 0, html = '';
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${month}-${String(d).padStart(2, '0')}`;
+        const dow = new Date(dateStr).getDay();
+        if (dow === 0) continue; // 日曜スキップ
+
+        const isSat = dow === 6;
+        const isHol = HOLIDAYS.includes(dateStr);
+        totalCount++;
+
+        const existingForSchool = (dataStore[dateStr] || []).filter(r => {
+          const st = STUDENTS.find(s => s.id === r.studentId);
+          return st && st.school === school;
+        });
+        const hasData = existingForSchool.length > 0;
+        if (hasData) doneCount++;
+
+        const dowLabel = ['日','月','火','水','木','金','土'][dow];
+        const statusIcon = hasData ? '✅' : '○';
+        const cellClass = [
+          'manual-day-cell',
+          hasData ? 'has-data' : '',
+          isSat ? 'is-sat' : '',
+          isHol ? 'is-sat' : '' // 祝日も青表示
+        ].join(' ');
+
+        html += `
+          <div class="${cellClass}" onclick="openManualDay('${dateStr}')">
+            <span class="manual-day-num">${d}</span>
+            <span class="manual-day-dow">${dowLabel}${isHol ? '<br><span style="font-size:9px;color:#dc2626;">祝</span>' : ''}</span>
+            <span class="manual-day-status">${statusIcon}</span>
+            ${hasData ? `<span class="manual-day-count">${existingForSchool.length}人</span>` : '<span class="manual-day-count" style="color:transparent;">—</span>'}
+          </div>`;
+      }
+
+      const pct = totalCount > 0 ? Math.round(doneCount / totalCount * 100) : 0;
+      document.getElementById('manualProgressBar').style.display = 'block';
+      document.getElementById('manualProgressLabel').textContent = `${doneCount} / ${totalCount}日 入力済`;
+      document.getElementById('manualProgressPct').textContent = `${pct}%`;
+      document.getElementById('manualProgressFill').style.width = `${pct}%`;
+      document.getElementById('manualCalendarGrid').innerHTML = `<div class="manual-day-grid">${html || '<p style="color:var(--text-light);font-size:13px;">表示できる日がありません</p>'}</div>`;
+    }
+
+    // 日付セルをクリック → 日別入力ビューを開く
+    function openManualDay(dateStr) {
+      _manualCurrentDate = dateStr;
+      _manualSchool = document.getElementById('manualSchool').value;
+
+      // 既存データをスナップショット（衝突検出用）
+      const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+      _manualSnapshot = (dataStore[dateStr] || [])
+        .filter(r => {
+          const st = STUDENTS.find(s => s.id === r.studentId);
+          return st && st.school === _manualSchool;
+        })
+        .map(r => ({ ...r })); // deep copy
+
+      // 生徒リストを組み立て
+      const schoolStudents = STUDENTS.filter(s => s.school === _manualSchool)
+        .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
+      if (schoolStudents.length === 0) {
+        alert(`「${_manualSchool}」に生徒が登録されていません。先に生徒名簿を設定してください。`);
+        return;
+      }
+
+      // 既存データがあればマージ、なければ全員出席デフォルト
+      const dayData = schoolStudents.map(st => {
+        const existing = _manualSnapshot.find(r => r.studentId === st.id);
+        return existing ? { ...existing } : {
+          studentId: st.id, name: st.name, grade: st.grade,
+          course: st.course, isAbsent: false,
+          hasExtMorn: false, exitTime: '',
+          hasBento: false, hasLargeBento: false,
+          hasPotato: false, hasLongHol: false,
+          eventFee: 0, school: st.school
+        };
+      });
+
+      // バナー更新
+      const dow = ['日','月','火','水','木','金','土'][new Date(dateStr).getDay()];
+      const [y, m, d] = dateStr.split('-');
+      const month = document.getElementById('manualMonth').value;
+      const [my, mm] = month.split('-');
+      document.getElementById('manualBannerDate').textContent =
+        `${parseInt(m)}月${parseInt(d)}日（${dow}） · ${_manualSchool}`;
+
+      // 前日・次日ナビの有効/無効
+      const [year, mon] = [parseInt(my), parseInt(mm)];
+      const firstDay = `${my}-${String(mon).padStart(2,'0')}-01`;
+      const lastDay  = `${my}-${String(mon).padStart(2,'0')}-${new Date(year, mon, 0).getDate().toString().padStart(2,'0')}`;
+      document.getElementById('manualPrevBtn').disabled = (dateStr <= firstDay);
+      document.getElementById('manualNextBtn').disabled = (dateStr >= lastDay);
+
+      // 長期休・イベント料金リセット
+      document.getElementById('manualIsLongHol').checked = false;
+      document.getElementById('manualEventFee').value = '';
+
+      // カード描画
+      renderManualAttCards(dateStr, dayData);
+
+      // ビュー切り替え
+      document.getElementById('manualCalendarView').style.display = 'none';
+      document.getElementById('manualDayView').style.display = 'block';
+    }
+
+    // 出欠カード描画（手入力モード専用）
+    let _manualDayData = [];
+    function renderManualAttCards(dateStr, dayData) {
+      _manualDayData = dayData;
+      const isSat = new Date(dateStr).getDay() === 6;
+      const HOLIDAYS = getJpHolidays(
+        parseInt(dateStr.split('-')[0]), parseInt(dateStr.split('-')[1])
+      );
+      const isHol = HOLIDAYS.includes(dateStr) || isSat;
+
+      let cards = '';
+      dayData.forEach((row, i) => {
+        const st = row.isAbsent ? 'absent' : 'present';
+        cards += `
+          <div class="att-card ${st === 'present' ? 'is-present' : 'is-absent'}" id="mcard-${i}">
+            <div class="att-card-top">
+              <div class="att-card-info">
+                <div class="att-card-name">${row.name}</div>
+                <div class="att-card-meta">${row.grade} · <span class="badge-course">${row.course || 'コース不明'}</span></div>
+              </div>
+              <span class="att-status-chip ${st}" id="mchip-${i}">${st === 'present' ? '出席' : '欠席'}</span>
+            </div>
+            <div class="att-card-btns">
+              <button class="att-card-btn ${st === 'present' ? 'active-present' : ''}" id="mbtn-p-${i}" onclick="setManualAtt(${i},'present')">
+                <i class="ph ph-check-circle"></i> 出席
+              </button>
+              <button class="att-card-btn ${st === 'absent' ? 'active-absent' : ''}" id="mbtn-a-${i}" onclick="setManualAtt(${i},'absent')">
+                <i class="ph ph-x-circle"></i> 欠席
+              </button>
+            </div>
+            <div class="att-card-options ${st === 'present' ? 'show' : ''}" id="mopts-${i}">
+              <div class="att-time-row">
+                <span class="att-time-label">退室時刻</span>
+                <input type="time" class="att-time-input" id="mtime-${i}" value="${row.exitTime || ''}" />
+              </div>
+              <div class="att-option-grid">
+                <button class="att-option-toggle ${row.hasExtMorn ? 'active' : ''}" id="mtog-extmorn-${i}" onclick="toggleManualOpt(${i},'extmorn')">朝延長</button>
+                <button class="att-option-toggle ${row.hasBento ? 'active' : ''}" id="mtog-lunch-${i}" onclick="toggleManualOpt(${i},'lunch')">弁当</button>
+                <button class="att-option-toggle ${row.hasLargeBento ? 'active' : ''}" id="mtog-llunch-${i}" onclick="toggleManualOpt(${i},'large-lunch')">弁当(大盛)</button>
+                ${isSat ? `<button class="att-option-toggle ${row.hasPotato ? 'active' : ''}" id="mtog-potato-${i}" onclick="toggleManualOpt(${i},'potato')">ポテト</button>` : ''}
+                ${isHol ? `<button class="att-option-toggle ${row.hasLongHol ? 'active' : ''}" id="mtog-longhol-${i}" onclick="toggleManualOpt(${i},'longhol')">長期休/特別</button>` : ''}
+              </div>
+            </div>
+          </div>`;
+      });
+
+      document.getElementById('manualAttList').innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:12px 0 8px;border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;color:var(--text-light);">生徒数: <strong style="color:var(--text);">${dayData.length}人</strong></span>
+          <span style="font-size:12px;color:var(--text-light);">出席: <strong style="color:#16a34a;">${dayData.filter(r=>!r.isAbsent).length}</strong> / 欠席: <strong style="color:#dc2626;">${dayData.filter(r=>r.isAbsent).length}</strong></span>
+        </div>
+        <div class="att-card-grid">${cards}</div>`;
+    }
+
+    function setManualAtt(i, status) {
+      _manualDayData[i].isAbsent = (status === 'absent');
+      const card  = document.getElementById(`mcard-${i}`);
+      const chip  = document.getElementById(`mchip-${i}`);
+      const btnP  = document.getElementById(`mbtn-p-${i}`);
+      const btnA  = document.getElementById(`mbtn-a-${i}`);
+      const opts  = document.getElementById(`mopts-${i}`);
+      if (card) { card.classList.toggle('is-present', status === 'present'); card.classList.toggle('is-absent', status === 'absent'); }
+      if (chip) { chip.className = `att-status-chip ${status}`; chip.textContent = status === 'present' ? '出席' : '欠席'; }
+      if (btnP) btnP.classList.toggle('active-present', status === 'present');
+      if (btnA) btnA.classList.toggle('active-absent', status === 'absent');
+      if (opts) opts.classList.toggle('show', status === 'present');
+      // カウント更新
+      const listEl = document.getElementById('manualAttList');
+      if (listEl) {
+        const presCount = _manualDayData.filter(r=>!r.isAbsent).length;
+        const absCount  = _manualDayData.filter(r=>r.isAbsent).length;
+        const cntEl = listEl.querySelector('span:nth-child(2)');
+        if (cntEl) cntEl.innerHTML = `出席: <strong style="color:#16a34a;">${presCount}</strong> / 欠席: <strong style="color:#dc2626;">${absCount}</strong>`;
+      }
+    }
+
+    function toggleManualOpt(i, type) {
+      const idMap = { extmorn:'mtog-extmorn', lunch:'mtog-lunch', 'large-lunch':'mtog-llunch', potato:'mtog-potato', longhol:'mtog-longhol' };
+      const btn = document.getElementById(`${idMap[type]}-${i}`);
+      if (!btn) return;
+      const active = btn.classList.toggle('active');
+      if (type === 'extmorn')      _manualDayData[i].hasExtMorn    = active;
+      else if (type === 'lunch')   _manualDayData[i].hasBento      = active;
+      else if (type === 'large-lunch') _manualDayData[i].hasLargeBento = active;
+      else if (type === 'potato')  _manualDayData[i].hasPotato     = active;
+      else if (type === 'longhol') _manualDayData[i].hasLongHol    = active;
+    }
+
+    // 全員出席ボタン
+    function setAllPresentManual() {
+      _manualDayData.forEach((row, i) => {
+        if (!row.isAbsent) return; // すでに出席ならスキップ
+        setManualAtt(i, 'present');
+      });
+    }
+
+    // 長期休業日チェックボックス → 全員に反映
+    function applyLongHolManual(checked) {
+      _manualDayData.forEach((row, i) => {
+        if (!row.isAbsent) {
+          _manualDayData[i].hasLongHol = checked;
+          const btn = document.getElementById(`mtog-longhol-${i}`);
+          if (btn) btn.classList.toggle('active', checked);
+        }
+      });
+    }
+
+    // 前日・次日ナビ
+    function manualNavDay(delta) {
+      // 現在の入力を収集してから移動
+      collectManualInputState();
+
+      const d = new Date(_manualCurrentDate);
+      d.setDate(d.getDate() + delta);
+      // 日曜ならさらにスキップ
+      while (d.getDay() === 0) d.setDate(d.getDate() + delta);
+
+      // 月をはみ出さないよう制限
+      const month = document.getElementById('manualMonth').value;
+      const [my, mm] = month.split('-').map(Number);
+      const firstDay = new Date(my, mm - 1, 1);
+      const lastDay  = new Date(my, mm, 0);
+      if (d < firstDay || d > lastDay) return;
+
+      openManualDay(d.toISOString().split('T')[0]);
+    }
+
+    // 画面の最新状態を _manualDayData に収集
+    function collectManualInputState() {
+      const isHol = document.getElementById('manualIsLongHol')?.checked || false;
+      const eventFee = parseInt(document.getElementById('manualEventFee')?.value) || 0;
+      _manualDayData.forEach((row, i) => {
+        row.exitTime      = document.getElementById(`mtime-${i}`)?.value || '';
+        row.hasExtMorn    = document.getElementById(`mtog-extmorn-${i}`)?.classList.contains('active') || false;
+        row.hasBento      = document.getElementById(`mtog-lunch-${i}`)?.classList.contains('active') || false;
+        row.hasLargeBento = document.getElementById(`mtog-llunch-${i}`)?.classList.contains('active') || false;
+        row.hasPotato     = document.getElementById(`mtog-potato-${i}`)?.classList.contains('active') || false;
+        const lhBtn = document.getElementById(`mtog-longhol-${i}`);
+        row.hasLongHol    = lhBtn ? lhBtn.classList.contains('active') : isHol;
+        row.eventFee      = !row.isAbsent ? eventFee : 0;
+      });
+    }
+
+    // 保存して次の日へ
+    function saveManualDay() {
+      collectManualInputState();
+
+      const dateStr = _manualCurrentDate;
+      let dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+      if (!dataStore[dateStr]) dataStore[dateStr] = [];
+
+      // 保存前のデータをバックアップ（「元に戻す」用）
+      _manualLastSaved = {
+        dateStr,
+        before: (dataStore[dateStr] || []).map(r => ({ ...r }))
+      };
+
+      // 同校舎のデータを差し替え
+      const newRows = _manualDayData.map(row => {
+        const master = STUDENTS.find(s => s.id === row.studentId);
+        return {
+          studentId: row.studentId,
+          name:      row.name,
+          grade:     (master?.grade)  || row.grade  || '未登録',
+          course:    (master?.course) || row.course || '月極全日（1〜3年）',
+          isAbsent:     row.isAbsent,
+          hasExtMorn:   row.hasExtMorn,
+          exitTime:     row.exitTime,
+          hasBento:     row.hasBento,
+          hasLargeBento:row.hasLargeBento,
+          hasPotato:    row.hasPotato,
+          hasLongHol:   row.hasLongHol,
+          eventFee:     row.eventFee || 0,
+          school:       row.school || _manualSchool
+        };
+      });
+
+      // 他校舎はそのまま残し、この校舎分だけ上書き
+      dataStore[dateStr] = [
+        ...(dataStore[dateStr] || []).filter(r => {
+          const st = STUDENTS.find(s => s.id === r.studentId);
+          return st && st.school !== _manualSchool;
+        }),
+        ...newRows
+      ];
+      localStorage.setItem('repeatSukumaneData', JSON.stringify(dataStore));
+
+      // 衝突チェック（既存データがあった場合）
+      if (_manualSnapshot.length > 0) {
+        const conflicts = detectManualConflicts(_manualSnapshot, newRows);
+        if (conflicts.length > 0) {
+          showManualConflictModal(dateStr, conflicts);
+          return; // 衝突確認画面を見せる（次へは確認後）
+        }
+      }
+
+      updateManualCalendarAfterSave();
+    }
+
+    // 衝突検出
+    function detectManualConflicts(before, after) {
+      const conflicts = [];
+      after.forEach(newRow => {
+        const oldRow = before.find(r => r.studentId === newRow.studentId);
+        if (!oldRow) return; // 新規追加は衝突なし
+        const diffs = [];
+        if (oldRow.isAbsent !== newRow.isAbsent)
+          diffs.push({ field: '出欠', old: oldRow.isAbsent ? '欠席' : '出席', new: newRow.isAbsent ? '欠席' : '出席' });
+        if ((oldRow.exitTime || '') !== (newRow.exitTime || '') && (oldRow.exitTime || newRow.exitTime))
+          diffs.push({ field: '退室時刻', old: oldRow.exitTime || 'なし', new: newRow.exitTime || 'なし' });
+        if (!!oldRow.hasExtMorn !== !!newRow.hasExtMorn)
+          diffs.push({ field: '朝延長', old: oldRow.hasExtMorn ? 'あり' : 'なし', new: newRow.hasExtMorn ? 'あり' : 'なし' });
+        if (!!oldRow.hasBento !== !!newRow.hasBento)
+          diffs.push({ field: '弁当', old: oldRow.hasBento ? 'あり' : 'なし', new: newRow.hasBento ? 'あり' : 'なし' });
+        if (!!oldRow.hasLargeBento !== !!newRow.hasLargeBento)
+          diffs.push({ field: '大盛弁当', old: oldRow.hasLargeBento ? 'あり' : 'なし', new: newRow.hasLargeBento ? 'あり' : 'なし' });
+        if (!!oldRow.hasLongHol !== !!newRow.hasLongHol)
+          diffs.push({ field: '長期休', old: oldRow.hasLongHol ? 'あり' : 'なし', new: newRow.hasLongHol ? 'あり' : 'なし' });
+        if (diffs.length > 0) conflicts.push({ name: newRow.name, diffs });
+      });
+      return conflicts;
+    }
+
+    // 衝突確認モーダル表示
+    function showManualConflictModal(dateStr, conflicts) {
+      const [y, m, d] = dateStr.split('-');
+      const dow = ['日','月','火','水','木','金','土'][new Date(dateStr).getDay()];
+      let html = `
+        <p style="font-size:13px;color:var(--text-light);margin-bottom:16px;">
+          <strong>${parseInt(m)}月${parseInt(d)}日（${dow}）</strong> の保存内容が既存データと異なる箇所があります。<br>
+          内容を確認して「手入力を採用」か「元のデータに戻す」を選択してください。
+        </p>
+        <div style="border-top:1px solid var(--border);">`;
+      conflicts.forEach(c => {
+        html += `
+          <div style="padding:12px 0;border-bottom:1px solid var(--border);">
+            <div style="font-weight:600;font-size:14px;margin-bottom:8px;">${c.name}</div>
+            <table style="width:100%;font-size:12px;border-collapse:collapse;">
+              <thead><tr>
+                <th style="text-align:left;padding:4px 8px;background:var(--bg-light);width:80px;">項目</th>
+                <th style="text-align:center;padding:4px 8px;background:#fef2f2;color:#991b1b;">既存データ</th>
+                <th style="text-align:center;padding:4px 8px;background:#f0fdf4;color:#166534;">手入力</th>
+              </tr></thead>
+              <tbody>`;
+        c.diffs.forEach(diff => {
+          html += `<tr>
+            <td style="padding:6px 8px;border-top:1px solid var(--border);">${diff.field}</td>
+            <td style="text-align:center;padding:6px 8px;border-top:1px solid var(--border);color:#991b1b;font-weight:600;">${diff.old}</td>
+            <td style="text-align:center;padding:6px 8px;border-top:1px solid var(--border);color:#166534;font-weight:600;">${diff.new}</td>
+          </tr>`;
+        });
+        html += `</tbody></table></div>`;
+      });
+      html += '</div>';
+      document.getElementById('manualConflictBody').innerHTML = html;
+      openModal('manualConflictModal');
+    }
+
+    // 元のデータに戻す
+    function revertManualSave() {
+      if (!_manualLastSaved) return;
+      const { dateStr, before } = _manualLastSaved;
+      let dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+      dataStore[dateStr] = before;
+      localStorage.setItem('repeatSukumaneData', JSON.stringify(dataStore));
+      closeModal('manualConflictModal');
+      updateManualCalendarAfterSave();
+      // 元に戻した旨を表示
+      const attAlert = document.getElementById('attAlert');
+      if (attAlert) { attAlert.textContent = '既存データに戻しました'; attAlert.style.display = 'block'; setTimeout(() => { attAlert.style.display = 'none'; attAlert.textContent = '保存しました'; }, 2500); }
+    }
+
+    // 保存後の後処理（次の日へ進む or カレンダーに戻る）
+    function updateManualCalendarAfterSave() {
+      // 次の平日へ自動移動
+      const d = new Date(_manualCurrentDate);
+      d.setDate(d.getDate() + 1);
+      while (d.getDay() === 0) d.setDate(d.getDate() + 1);
+
+      const month = document.getElementById('manualMonth').value;
+      const [my, mm] = month.split('-').map(Number);
+      const lastDay = new Date(my, mm, 0);
+
+      if (d <= lastDay) {
+        openManualDay(d.toISOString().split('T')[0]);
+      } else {
+        // 月末まで入力済み → カレンダーに戻る
+        exitManualMode();
+        alert('この月の全日入力が完了しました！\n「月謝計算・請求」ページで請求額を確認できます。');
+      }
+    }
+
+    // カレンダービューへ戻る
+    function exitManualMode() {
+      document.getElementById('manualCalendarView').style.display = 'block';
+      document.getElementById('manualDayView').style.display = 'none';
+      renderManualCalendar(); // 進捗を更新
+    }
+
+    // 祝日判定（簡易: 国民の祝日のうち固定日のみ）
+    function getJpHolidays(year, mon) {
+      const fixed = [
+        `${year}-01-01`, `${year}-02-11`, `${year}-02-23`,
+        `${year}-03-20`, `${year}-04-29`, `${year}-05-03`,
+        `${year}-05-04`, `${year}-05-05`, `${year}-08-11`,
+        `${year}-09-23`, `${year}-10-14`, `${year}-11-03`,
+        `${year}-11-23`, `${year}-12-23`
+      ];
+      const monStr = String(mon).padStart(2, '0');
+      return fixed.filter(d => d.startsWith(`${year}-${monStr}`));
+    }
+
+    // showPage に手入力ページを追加
+    (function() {
+      const _origShowPage = showPage;
+      showPage = function(pageId, arg2, arg3) {
+        _origShowPage(pageId, arg2, arg3);
+        if (pageId === 'page-manual-input' || pageId === 'manual-input') {
+          initManualInputPage();
+          // 初回表示時にカレンダーを自動描画
+          const grid = document.getElementById('manualCalendarGrid');
+          if (grid && !grid.innerHTML) renderManualCalendar();
+        }
+      };
+    })();
 
     // =====================================================
     // ===== ここから既存コード =====
