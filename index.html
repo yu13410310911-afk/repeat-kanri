@@ -6843,11 +6843,21 @@
     }
 
     // 日付セルをクリック → 日別入力ビューを開く
-    function openManualDay(dateStr) {
+    async function openManualDay(dateStr) {
       _manualCurrentDate = dateStr;
       _manualSchool = document.getElementById('manualSchool').value;
 
-      // 既存データをスナップショット（衝突検出用）
+      // Supabase にデータがあれば先にローカルへマージ（localStorage に未保存の場合）
+      if (_sbReady) {
+        const localStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+        const localRows  = (localStore[dateStr] || []).filter(r => r.school === _manualSchool);
+        if (localRows.length === 0) {
+          // Supabase から取得してローカルへ書き込む
+          await sbLoadAttendanceForDate(dateStr, _manualSchool);
+        }
+      }
+
+      // 既存データをスナップショット（衝突検出用）— Supabaseマージ後に読む
       const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
       _manualSnapshot = (dataStore[dateStr] || [])
         .filter(r => {
@@ -7049,7 +7059,7 @@
     }
 
     // 保存して次の日へ
-    function saveManualDay() {
+    async function saveManualDay() {
       collectManualInputState();
 
       const dateStr = _manualCurrentDate;
@@ -7091,6 +7101,23 @@
         ...newRows
       ];
       localStorage.setItem('repeatSukumaneData', JSON.stringify(dataStore));
+
+      // ── Supabase 同期 ──────────────────────────────────────
+      if (_sbReady) {
+        try {
+          // sbUpsertAttendance は currentDailyData / currentSchool を参照するため一時的にセット
+          const _prevDailyData  = currentDailyData;
+          const _prevSchool     = currentSchool;
+          currentDailyData = newRows;
+          currentSchool    = _manualSchool;
+          await sbUpsertAttendance(dateStr);
+          currentDailyData = _prevDailyData;
+          currentSchool    = _prevSchool;
+        } catch(e) {
+          console.error('[手入力] Supabase保存エラー:', e);
+        }
+      }
+      // ───────────────────────────────────────────────────────
 
       // 衝突チェック（既存データがあった場合）
       if (_manualSnapshot.length > 0) {
@@ -7164,15 +7191,30 @@
     }
 
     // 元のデータに戻す
-    function revertManualSave() {
+    async function revertManualSave() {
       if (!_manualLastSaved) return;
       const { dateStr, before } = _manualLastSaved;
       let dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
       dataStore[dateStr] = before;
       localStorage.setItem('repeatSukumaneData', JSON.stringify(dataStore));
+
+      // Supabase も元のデータで上書き
+      if (_sbReady && before.length > 0) {
+        try {
+          const _prevDailyData = currentDailyData;
+          const _prevSchool    = currentSchool;
+          currentDailyData = before;
+          currentSchool    = _manualSchool;
+          await sbUpsertAttendance(dateStr);
+          currentDailyData = _prevDailyData;
+          currentSchool    = _prevSchool;
+        } catch(e) {
+          console.error('[手入力 revert] Supabase保存エラー:', e);
+        }
+      }
+
       closeModal('manualConflictModal');
       updateManualCalendarAfterSave();
-      // 元に戻した旨を表示
       const attAlert = document.getElementById('attAlert');
       if (attAlert) { attAlert.textContent = '既存データに戻しました'; attAlert.style.display = 'block'; setTimeout(() => { attAlert.style.display = 'none'; attAlert.textContent = '保存しました'; }, 2500); }
     }
