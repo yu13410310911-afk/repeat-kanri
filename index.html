@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>リピート学童 管理システム デモ版</title>
+  <title>リピート学童 管理システム</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap"
     rel="stylesheet" />
   <style>
@@ -1703,7 +1703,7 @@
 
       <div class="form-group">
         <label id="lblLoginId">スタッフID</label>
-        <input type="text" id="loginId" placeholder="ログインIDを入力" value="staff" />
+        <input type="text" id="loginId" placeholder="ログインIDを入力" value="" />
       </div>
 
       <div class="form-group" id="loginSchoolGroup">
@@ -1712,6 +1712,7 @@
           <option value="中洲校">中洲校（本部）</option>
           <option value="大高校">大高校</option>
           <option value="御南校">御南校</option>
+          <option value="長尾校">長尾校</option>
         </select>
       </div>
 
@@ -1721,9 +1722,6 @@
       </div>
 
       <button class="btn-login" onclick="login()">ログイン</button>
-      <p style="text-align:center;font-size:12px;color:#9CA3AF;margin-top:16px;">
-        ※デモ版：ID「staff」または「admin」<br>パスワードは任意
-      </p>
     </div>
   </div>
 
@@ -2941,7 +2939,7 @@
         if (data && data.length > 0) {
           const accounts = data.map(r => ({
             id: r.id, name: r.name, school: r.school,
-            role: r.role, password: r.password
+            role: r.role, pass: r.password   // ローカルはpassフィールドで統一
           }));
           localStorage.setItem('repeatStaffAccounts', JSON.stringify(accounts));
         }
@@ -2951,9 +2949,15 @@
     }
 
     async function sbSaveStaffAccount(account) {
-      const row = { id: account.id, name: account.name, school: account.school, role: account.role, password: account.password };
+      // ローカルはpassフィールド、Supabaseのカラム名はpassword
+      const row = { id: account.id, name: account.name, school: account.school, role: account.role, password: account.pass };
       const { error } = await _sb.from('staff_accounts').upsert(row, { onConflict: 'id' });
       if (error) console.error('[Supabase] staff_account保存エラー:', error.message);
+    }
+
+    async function sbDeleteStaffAccount(id) {
+      const { error } = await _sb.from('staff_accounts').delete().eq('id', id);
+      if (error) console.error('[Supabase] staff_account削除エラー:', error.message);
     }
 
     // 日報
@@ -3476,11 +3480,11 @@
 
       if (role === 'admin') {
         document.getElementById('lblLoginId').textContent = '管理者ID';
-        document.getElementById('loginId').value = 'admin';
+        document.getElementById('loginId').value = '';
         document.getElementById('loginSchoolGroup').style.display = 'none';
       } else {
         document.getElementById('lblLoginId').textContent = 'スタッフID';
-        document.getElementById('loginId').value = 'staff';
+        document.getElementById('loginId').value = '';
         document.getElementById('loginSchoolGroup').style.display = 'block';
       }
       document.getElementById('loginError').style.display = 'none';
@@ -3603,9 +3607,9 @@
 
       let accounts = JSON.parse(localStorage.getItem('repeatStaffAccounts'));
       if (!accounts || accounts.length === 0) {
+        // Supabase未接続時の初期フォールバック（初回セットアップ専用）
         accounts = [
-          { id: 'admin', pass: '', name: '経営者', role: 'admin', school: '全校舎' },
-          { id: 'staff', pass: '', name: 'デモ用スタッフ', role: 'staff', school: '' }
+          { id: 'admin', pass: 'repeat2025', name: '経営者', role: 'admin', school: '全校舎' }
         ];
         localStorage.setItem('repeatStaffAccounts', JSON.stringify(accounts));
       }
@@ -6004,8 +6008,10 @@
         return;
       }
 
-      accounts.push({ id: loginId, pass: pass, name: name, role: role, school: school });
+      const newAccount = { id: loginId, pass: pass, name: name, role: role, school: school };
+      accounts.push(newAccount);
       localStorage.setItem('repeatStaffAccounts', JSON.stringify(accounts));
+      if (_sbReady) sbSaveStaffAccount(newAccount);  // Supabase同期
 
       closeStaffModal();
       renderStaffManagement();
@@ -6019,6 +6025,7 @@
       let accounts = JSON.parse(localStorage.getItem('repeatStaffAccounts') || '[]');
       accounts = accounts.filter(a => a.id !== id);
       localStorage.setItem('repeatStaffAccounts', JSON.stringify(accounts));
+      if (_sbReady) sbDeleteStaffAccount(id);  // Supabase同期
       renderStaffManagement();
       showSysToast('アカウントを削除しました');
     }
