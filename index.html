@@ -1656,6 +1656,18 @@
     }
     .manual-day-count { font-size: 10px; color: var(--text-light); }
 
+    /* 月次集計入力タブ */
+    .manual-tab-bar { display:flex; border:1px solid var(--border); overflow:hidden; margin-bottom:20px; }
+    .manual-tab-btn { flex:1; padding:10px 0; font-size:13px; font-weight:600; border:none; background:#fff; color:var(--text-light); cursor:pointer; letter-spacing:.04em; transition:background .15s,color .15s; }
+    .manual-tab-btn.active { background:var(--primary); color:#fff; }
+    .manual-monthly-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .manual-monthly-table th { padding:8px 6px; background:#f5f5f5; border:1px solid var(--border); font-size:11px; text-align:center; font-weight:700; }
+    .manual-monthly-table td { padding:6px 4px; border:1px solid var(--border); vertical-align:middle; }
+    .manual-monthly-table td:first-child { padding:8px; min-width:110px; }
+    .mmcell-dash { text-align:center; color:#ccc; font-size:16px; }
+    .mm-input { width:48px; padding:4px 2px; text-align:center; border:1px solid var(--border); font-size:13px; font-weight:600; -moz-appearance:textfield; }
+    .mm-input::-webkit-outer-spin-button,.mm-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+
     @keyframes spin {
       from { transform: rotate(0deg); }
       to   { transform: rotate(360deg); }
@@ -1906,10 +1918,18 @@
                 <span class="card-title"><i class="ph ph-note-pencil" style="vertical-align:middle;margin-right:6px;"></i>手入力モード — 月間遡り入力</span>
               </div>
               <div class="card-body">
-                <p style="font-size:13px;color:var(--text-light);margin-bottom:16px;">
-                  CSVを保存し忘れた月の出欠を、紙の出席簿を見ながら日付ごとに入力できます。<br>
-                  入力したデータは「月謝計算・請求」ページに自動的に反映されます。
-                </p>
+
+                <!-- タブ切り替え -->
+                <div class="manual-tab-bar">
+                  <button id="manualTabDay" class="manual-tab-btn active" onclick="switchManualTab('day')">
+                    <i class="ph ph-calendar-blank" style="vertical-align:middle;margin-right:4px;"></i>日単位入力
+                  </button>
+                  <button id="manualTabMonthly" class="manual-tab-btn" onclick="switchManualTab('monthly')">
+                    <i class="ph ph-table" style="vertical-align:middle;margin-right:4px;"></i>月次集計入力
+                  </button>
+                </div>
+
+                <!-- 月・校舎セレクタ（共通） -->
                 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
                   <select id="manualMonth" class="form-select" style="width:160px;"></select>
                   <select id="manualSchool" class="form-select" style="width:140px;">
@@ -1918,20 +1938,46 @@
                     <option value="御南校">御南校</option>
                     <option value="長尾校">長尾校</option>
                   </select>
-                  <button class="btn btn-primary btn-sm" onclick="renderManualCalendar()">
+                  <button class="btn btn-primary btn-sm" id="manualShowBtn" onclick="onManualShowBtn()">
                     <i class="ph ph-calendar" style="vertical-align:middle;margin-right:4px;"></i>表示
                   </button>
                 </div>
-                <div id="manualProgressBar" style="display:none;margin-bottom:20px;">
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <span style="font-size:13px;font-weight:600;color:var(--text);" id="manualProgressLabel">0 / 0日 入力済</span>
-                    <span style="font-size:11px;color:var(--text-light);" id="manualProgressPct">0%</span>
+
+                <!-- 日単位セクション -->
+                <div id="manualDaySection">
+                  <p style="font-size:13px;color:var(--text-light);margin-bottom:16px;">
+                    日付をタップして1日ずつ出欠を入力します。<br>
+                    <b>特別コース・12日間コース</b>の生徒はデフォルト欠席になります。
+                  </p>
+                  <div id="manualProgressBar" style="display:none;margin-bottom:20px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                      <span style="font-size:13px;font-weight:600;color:var(--text);" id="manualProgressLabel">0 / 0日 入力済</span>
+                      <span style="font-size:11px;color:var(--text-light);" id="manualProgressPct">0%</span>
+                    </div>
+                    <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
+                      <div id="manualProgressFill" style="height:100%;background:var(--primary);transition:width .4s;width:0%;border-radius:3px;"></div>
+                    </div>
                   </div>
-                  <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
-                    <div id="manualProgressFill" style="height:100%;background:var(--primary);transition:width .4s;width:0%;border-radius:3px;"></div>
+                  <div id="manualCalendarGrid"></div>
+                </div>
+
+                <!-- 月次集計セクション -->
+                <div id="manualMonthlySection" style="display:none;">
+                  <p style="font-size:13px;color:var(--text-light);margin-bottom:16px;">
+                    紙の出席簿から<b>月ごとの利用回数</b>を生徒別に入力します。<br>
+                    延長・土曜・弁当・特別コース利用などをまとめて記録でき、月謝計算に直接反映されます。
+                  </p>
+                  <div id="manualMonthlyBody"></div>
+                  <div id="manualMonthlySaveRow" style="display:none;margin-top:16px;display:none;justify-content:flex-end;gap:10px;">
+                    <button class="btn btn-outline" onclick="renderManualMonthlyInput()">
+                      <i class="ph ph-arrow-clockwise" style="vertical-align:middle;margin-right:3px;"></i>リセット
+                    </button>
+                    <button class="btn btn-primary" onclick="saveManualMonthly()">
+                      <i class="ph ph-floppy-disk" style="vertical-align:middle;margin-right:4px;"></i>保存して月謝に反映
+                    </button>
                   </div>
                 </div>
-                <div id="manualCalendarGrid"></div>
+
               </div>
             </div>
           </div>
@@ -3336,6 +3382,17 @@
     }
 
     function calcBilling(studentId, yearMonth) {
+      // 月次集計データが存在する場合はそちらを優先
+      const s0 = STUDENTS.find(x => x.id === studentId);
+      if (s0) {
+        const allAgg = JSON.parse(localStorage.getItem('repeatMonthlyAggregate') || '{}');
+        const aggKey = `${yearMonth}_${s0.school}`;
+        const monthAgg = allAgg[aggKey];
+        if (monthAgg && monthAgg[studentId] !== undefined) {
+          return calcBillingFromAggregate(s0, yearMonth, monthAgg[studentId]);
+        }
+      }
+
       const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
 
       let s = STUDENTS.find(x => x.id === studentId);
@@ -6882,12 +6939,15 @@
         return;
       }
 
-      // 既存データがあればマージ、なければ全員出席デフォルト
+      // 既存データがあればマージ、なければデフォルト値（特別コース・12日コースは欠席デフォルト）
       const dayData = schoolStudents.map(st => {
         const existing = _manualSnapshot.find(r => r.studentId === st.id);
-        return existing ? { ...existing } : {
+        if (existing) return { ...existing };
+        const c = st.course || '';
+        const defaultAbsent = c.includes('特別') || c.includes('12日');
+        return {
           studentId: st.id, name: st.name, grade: st.grade,
-          course: st.course, isAbsent: false,
+          course: st.course, isAbsent: defaultAbsent,
           hasExtMorn: false, exitTime: '',
           hasBento: false, hasLargeBento: false,
           hasPotato: false, hasLongHol: false,
@@ -7264,6 +7324,198 @@
       ];
       const monStr = String(mon).padStart(2, '0');
       return fixed.filter(d => d.startsWith(`${year}-${monStr}`));
+    }
+
+    // ===== 月次集計入力 =====
+
+    function switchManualTab(tab) {
+      const isDay = tab === 'day';
+      document.getElementById('manualTabDay').classList.toggle('active', isDay);
+      document.getElementById('manualTabMonthly').classList.toggle('active', !isDay);
+      document.getElementById('manualDaySection').style.display = isDay ? 'block' : 'none';
+      document.getElementById('manualMonthlySection').style.display = isDay ? 'none' : 'block';
+      const showBtn = document.getElementById('manualShowBtn');
+      if (showBtn) {
+        showBtn.innerHTML = isDay
+          ? '<i class="ph ph-calendar" style="vertical-align:middle;margin-right:4px;"></i>表示'
+          : '<i class="ph ph-table" style="vertical-align:middle;margin-right:4px;"></i>表示';
+      }
+    }
+
+    function onManualShowBtn() {
+      const isDay = document.getElementById('manualTabDay').classList.contains('active');
+      if (isDay) {
+        renderManualCalendar();
+      } else {
+        renderManualMonthlyInput();
+      }
+    }
+
+    function renderManualMonthlyInput() {
+      const month  = document.getElementById('manualMonth').value;
+      const school = document.getElementById('manualSchool').value;
+      if (!month || !school) { showSysToast('月と校舎を選択してください'); return; }
+
+      const students = STUDENTS.filter(s => s.school === school)
+        .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      if (students.length === 0) {
+        showSysToast(`「${school}」に生徒が登録されていません`);
+        return;
+      }
+
+      const aggKey  = `${month}_${school}`;
+      const allAgg  = JSON.parse(localStorage.getItem('repeatMonthlyAggregate') || '{}');
+      const savedAgg = allAgg[aggKey] || {};
+
+      const inp = (sid, field, val, show) => {
+        if (!show) return '<td class="mmcell-dash">—</td>';
+        return `<td style="text-align:center;"><input type="number" min="0" max="999" class="mm-input"
+          data-sid="${sid}" data-field="${field}" value="${val !== undefined ? val : 0}"></td>`;
+      };
+
+      let html = `
+        <div style="overflow-x:auto;">
+        <table class="manual-monthly-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;">氏名（コース）</th>
+              <th>延長<br><small style="font-weight:400;">枠数</small></th>
+              <th>土曜<br><small style="font-weight:400;">回</small></th>
+              <th>弁当並<br><small style="font-weight:400;">個</small></th>
+              <th>ポテト<br><small style="font-weight:400;">個</small></th>
+              <th>特別<br><small style="font-weight:400;">休日</small></th>
+              <th>特別<br><small style="font-weight:400;">平日</small></th>
+              <th>長期休<br><small style="font-weight:400;">月極のみ</small></th>
+              <th>出席日数<br><small style="font-weight:400;">12日コース</small></th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+      students.forEach(st => {
+        const agg = savedAgg[st.id] || {};
+        const c = st.course || '';
+        const isSpecial  = c.includes('特別');
+        const is12Day    = c.includes('12日');
+        const isMonthly  = !isSpecial && !is12Day;
+
+        html += `<tr>
+          <td>
+            <div style="font-weight:600;font-size:13px;">${st.name}</div>
+            <div style="font-size:11px;color:var(--text-light);">${c || '—'}</div>
+          </td>
+          ${inp(st.id, 'extUnits',       agg.extUnits,       true)}
+          ${inp(st.id, 'satCount',        agg.satCount,        true)}
+          ${inp(st.id, 'lunchCount',      agg.lunchCount,      true)}
+          ${inp(st.id, 'potatoCount',     agg.potatoCount,     true)}
+          ${inp(st.id, 'specialHoliday',  agg.specialHoliday,  isSpecial || is12Day)}
+          ${inp(st.id, 'specialWeekday',  agg.specialWeekday,  isSpecial || is12Day)}
+          ${inp(st.id, 'holCount',        agg.holCount,        isMonthly)}
+          ${inp(st.id, 'attendDays',      agg.attendDays,      is12Day)}
+        </tr>`;
+      });
+
+      html += '</tbody></table></div>';
+
+      const body = document.getElementById('manualMonthlyBody');
+      body.innerHTML = html;
+      const saveRow = document.getElementById('manualMonthlySaveRow');
+      if (saveRow) saveRow.style.display = 'flex';
+    }
+
+    function saveManualMonthly() {
+      const month  = document.getElementById('manualMonth').value;
+      const school = document.getElementById('manualSchool').value;
+      if (!month || !school) return;
+
+      const aggKey = `${month}_${school}`;
+      const allAgg = JSON.parse(localStorage.getItem('repeatMonthlyAggregate') || '{}');
+      const monthAgg = allAgg[aggKey] || {};
+
+      document.querySelectorAll('.mm-input').forEach(inp => {
+        const sid   = inp.dataset.sid;
+        const field = inp.dataset.field;
+        const val   = parseInt(inp.value) || 0;
+        if (!monthAgg[sid]) monthAgg[sid] = {};
+        monthAgg[sid][field] = val;
+      });
+
+      allAgg[aggKey] = monthAgg;
+      localStorage.setItem('repeatMonthlyAggregate', JSON.stringify(allAgg));
+      showSysToast('月次集計を保存しました。月謝計算ページに反映されます。');
+    }
+
+    // 月次集計データから請求計算（日次データが無い場合に使用）
+    function calcBillingFromAggregate(s, yearMonth, agg) {
+      const isSpecial = (s.course || '').includes('特別');
+      const is12Day   = s.course === '12日間コース';
+
+      let base = 0;
+      if (isSpecial) {
+        base = ((agg.specialHoliday || 0) * 3300) + ((agg.specialWeekday || 0) * 2200);
+      } else if (is12Day) {
+        // 前月までの年度累計を日次データ + 他月の集計データ両方から算出
+        const dataStore = JSON.parse(localStorage.getItem('repeatSukumaneData') || '{}');
+        const allAggAll = JSON.parse(localStorage.getItem('repeatMonthlyAggregate') || '{}');
+        const [ymY, ymM] = yearMonth.split('-').map(Number);
+        const syStartYear = ymM >= 4 ? ymY : ymY - 1;
+        const syStart = `${syStartYear}-04-01`;
+        let days12UsedBefore = 0;
+
+        Object.keys(dataStore).filter(d => d < yearMonth && d >= syStart).forEach(date => {
+          const row = (dataStore[date] || []).find(r => String(r.studentId) === String(s.id));
+          if (row && !row.isAbsent) days12UsedBefore++;
+        });
+        Object.keys(allAggAll).forEach(key => {
+          const [pm] = key.split('_');
+          if (pm >= yearMonth || pm < syStart.slice(0,7)) return;
+          const pa = allAggAll[key][s.id];
+          if (pa && pa.attendDays) days12UsedBefore += pa.attendDays;
+        });
+
+        base = days12UsedBefore < 12 ? 11000 : 0;
+        const attendDays   = agg.attendDays || 0;
+        const overflow     = Math.max(0, (days12UsedBefore + attendDays) - 12);
+        const overflowHol  = agg.specialHoliday || 0;
+        const overflowWday = Math.max(0, overflow - overflowHol);
+        base += overflowHol * 3300 + overflowWday * 2200;
+      } else {
+        base = getBasePrice(s.course, s.grade);
+      }
+
+      const extUnits        = agg.extUnits        || 0;
+      const morningExtCount = agg.morningExtCount  || 0;
+      const lunchCount      = agg.lunchCount       || 0;
+      const largeLunchCount = agg.largeLunchCount  || 0;
+      const potatoCount     = agg.potatoCount      || 0;
+      const satCount        = agg.satCount         || 0;
+      const holCount        = agg.holCount         || 0;
+      const eventFeeTotal   = agg.eventFeeTotal    || 0;
+
+      const extFee        = (extUnits * 550) + (morningExtCount * 550);
+      const lunchFee      = lunchCount * 450;
+      const largeLunchFee = largeLunchCount * 500;
+      const potatoFee     = potatoCount * 200;
+      const satFee        = isSpecial ? (satCount * 3300) : (satCount * 1650);
+      const holFee        = holCount * 770;
+
+      let transportFee = 0;
+      if (s.transport) {
+        if (isSpecial) {
+          const tc = (agg.specialHoliday || 0) + (agg.specialWeekday || 0);
+          transportFee = tc * 330;
+        } else {
+          transportFee = 2750;
+        }
+      }
+
+      const total = base + extFee + lunchFee + largeLunchFee + potatoFee + satFee + holFee + transportFee + eventFeeTotal;
+      return {
+        base, extFee, extUnits, morningExtCount, lunchFee, lunchCount,
+        largeLunchFee, largeLunchCount, potatoFee, potatoCount,
+        satFee, satCount, holFee, holCount, transportFee, eventFeeTotal,
+        total, transportCount: 0, spotDayCount: 0,
+        days12Quota: agg.attendDays || 0, days12Excess: 0
+      };
     }
 
     // showPage に手入力ページを追加
