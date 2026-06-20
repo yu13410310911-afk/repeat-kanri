@@ -3003,7 +3003,16 @@
         notes: student.notes || ''
       };
       const { error } = await _sb.from('students').upsert(row, { onConflict: 'id' });
-      if (error) console.error('[Supabase] student保存エラー:', error.message);
+      if (error) {
+        // 拡張カラムが存在しない場合は基本カラムのみで再保存
+        console.warn('[Supabase] 拡張カラムで失敗、基本カラムで再試行:', error.message);
+        const basicRow = {
+          id: row.id, name: row.name, grade: row.grade,
+          school: row.school, course: row.course, notes: row.notes
+        };
+        const { error: e2 } = await _sb.from('students').upsert(basicRow, { onConflict: 'id' });
+        if (e2) console.error('[Supabase] student保存エラー:', e2.message);
+      }
     }
 
     async function sbDeleteStudent(studentId) {
@@ -3418,17 +3427,75 @@
       });
     }
 
+    // 生年月日文字列から学年文字列を計算（日本の学校制度）
+    function calcGradeFromBirthdate(dateStr) {
+      if (!dateStr) return null;
+      const m = dateStr.match(/(\d{4})[\/-年](\d{1,2})[\/-月](\d{1,2})/);
+      if (!m) return null;
+      const birthYear = parseInt(m[1]);
+      const birthMonth = parseInt(m[2]);
+      const birthDay = parseInt(m[3]);
+      const today = new Date();
+      const currentSY = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
+      // 4月1日以前生まれ: birth+6年度入学、4月2日以降: birth+7年度入学
+      const isBeforeOrOnApril1 = birthMonth < 4 || (birthMonth === 4 && birthDay <= 1);
+      const entryYear = isBeforeOrOnApril1 ? birthYear + 6 : birthYear + 7;
+      const grade = currentSY - entryYear + 1;
+      if (grade <= 0) return '未就学';
+      if (grade <= 6) return `小${grade}年生`;
+      if (grade === 7) return '中1';
+      if (grade === 8) return '中2';
+      if (grade === 9) return '中3';
+      return '中学生以上';
+    }
+
+    // "6歳" 形式から近似学年を計算（生年月日がない場合）
+    function calcGradeFromAgeStr(ageStr) {
+      if (!ageStr) return null;
+      const m = String(ageStr).match(/(\d+)/);
+      if (!m) return null;
+      const age = parseInt(m[1]);
+      if (age <= 5) return '未就学';
+      if (age <= 11) return `小${age - 5}年生`;
+      return '中学生以上';
+    }
+
+    // 学年文字列から学年番号を抽出（小1=1, 小6=6, 中1=7等）
+    function getGradeNumber(gradeStr) {
+      if (!gradeStr) return 0;
+      const g = toHalfWidth(String(gradeStr));
+      const m1 = g.match(/小(\d+)/);
+      if (m1) return parseInt(m1[1]);
+      const m2 = g.match(/^(\d+)年/);
+      if (m2) return parseInt(m2[1]);
+      const m3 = g.match(/中(\d+)/);
+      if (m3) return parseInt(m3[1]) + 6;
+      const m4 = g.match(/(\d+)歳/);
+      if (m4) { const a = parseInt(m4[1]); return a >= 6 ? a - 5 : 0; }
+      return 0;
+    }
+
+    // 中学1年生以上かどうか判定
+    function isMiddleSchoolOrAbove(gradeStr) {
+      if (!gradeStr) return false;
+      const g = String(gradeStr);
+      if (g.includes('中') || g.includes('中学')) return true;
+      const num = getGradeNumber(g);
+      return num >= 7;
+    }
+
     function getBasePrice(course, grade) {
       if (!course) return 0;
       const c = toHalfWidth(course);
-      const g = toHalfWidth(grade);
+      const g = toHalfWidth(grade || '');
 
       if (c.includes('12日')) return 11000;
 
       if (c.includes('月極') || c.includes('全日') || c.includes('レギュラー')) {
-        if (g && ['1', '2', '3'].some(n => g.includes(n))) return 14300;
-        if (g && ['4', '5', '6'].some(n => g.includes(n))) return 12100;
-        return 14300; // default for Monthly Full-time
+        const gradeNum = getGradeNumber(g);
+        if (gradeNum >= 1 && gradeNum <= 3) return 14300;
+        if (gradeNum >= 4 && gradeNum <= 6) return 12100;
+        return 14300;
       }
       return 0; // 特別コース or その他
     }
@@ -4868,24 +4935,37 @@
 
           // 出席簿コース名 → システム内コース名へのマッピング
           function mapCourse(courseStr, gradeStr) {
-            const upperGrades = ['小４','小５','小６','4年生','5年生','6年生'];
-            const isUpper = upperGrades.some(g => gradeStr.includes(g.replace('年生','').replace('小','')));
+            const gradeNum = getGradeNumber(gradeStr);
+            const isUpper = gradeNum >= 4 && gradeNum <= 6;
             if (courseStr.includes('全コース'))  return isUpper ? '月極全日（4〜6年）' : '月極全日（1〜3年）';
             if (courseStr.includes('12日'))       return '12日間コース';
             if (courseStr.includes('特別'))       return isUpper ? '月極全日 特別コース（4〜6年）' : '月極全日 特別コース（1〜3年）';
             if (courseStr.includes('スポット'))   return 'スポット';
             return courseStr || '月極全日（1〜3年）';
           }
-          // 学年表記の統一: 小１ → 1年生
+          // 学年表記の統一: 小１ → 小1年生、N歳 → 小(N-5)年生 近似
           function normalizeGrade(g) {
-            return (g || '').replace(/小([１-６1-6])/, (_, n) => {
+            let r = (g || '').replace(/小([１-６1-6])/, (_, n) => {
               const map = {'１':'1','２':'2','３':'3','４':'4','５':'5','６':'6'};
-              return (map[n] || n) + '年生';
+              return `小${map[n] || n}年生`;
             });
+            r = r.replace(/^(\d+)歳$/, (_, n) => {
+              const age = parseInt(n);
+              if (age >= 6 && age <= 11) return `小${age - 5}年生`;
+              return _;
+            });
+            return r;
           }
           // 出席簿の弁当列インデックスを動的取得
           const bentoIdx     = header.indexOf('日替り弁当');
           const bentoLgIdx   = header.indexOf('日替り弁当（大盛）');
+          // スクマネ形式: 生年月日列を探す
+          const birthdateIdx = (() => {
+            for (let ci = 0; ci < header.length; ci++) {
+              if (header[ci] && (header[ci].includes('生年月日') || header[ci].includes('誕生日'))) return ci;
+            }
+            return -1;
+          })();
 
           for (let i = 1; i < parsedRows.length; i++) {
             const cols = parsedRows[i];
@@ -4896,9 +4976,15 @@
               const firstName = cols[3] || '';
               const fullName = lastName || firstName ? `${lastName} ${firstName}`.trim() : '不明';
 
-              const schoolName = cols[50] || '';
-              const age = cols[8] ? cols[8] + '歳' : '';
-              const gradeStr = [schoolName, age].filter(x => x).join(' ') || '未登録';
+              // 生年月日→学年変換（優先）、なければ年齢から近似
+              let gradeStr = '';
+              if (birthdateIdx >= 0 && cols[birthdateIdx]) {
+                gradeStr = calcGradeFromBirthdate(cols[birthdateIdx]) || '';
+              }
+              if (!gradeStr && cols[8]) {
+                gradeStr = calcGradeFromAgeStr(cols[8]) || '';
+              }
+              gradeStr = gradeStr || '未登録';
 
               const courseStr = [37, 38, 39, 40, 41].map(idx => cols[idx] || '').filter(x => x).join(' ') || '未設定';
               const bankInfo = [cols[64], cols[66]].filter(x => x).join(' ') || '未登録';
@@ -4951,6 +5037,11 @@
         }
 
         if (newStudents.length > 0) {
+          // 中学1年生以上を自動除外
+          const beforeCount = newStudents.length;
+          newStudents = newStudents.filter(s => !isMiddleSchoolOrAbove(s.grade));
+          const removedCount = beforeCount - newStudents.length;
+
           STUDENTS.length = 0;
           newStudents.forEach(s => STUDENTS.push(s));
 
@@ -4962,8 +5053,11 @@
 
           const alertBox = document.getElementById('rosterAlert');
           if (alertBox) {
+            let msg = `${STUDENTS.length}名の生徒データを取込みました。`;
+            if (removedCount > 0) msg += `（中学生以上 ${removedCount}名は自動除外）`;
+            alertBox.textContent = msg;
             alertBox.style.display = 'block';
-            setTimeout(() => alertBox.style.display = 'none', 3000);
+            setTimeout(() => alertBox.style.display = 'none', 4000);
           }
           localStorage.setItem('repeatStudentsData', JSON.stringify(STUDENTS));
           // Supabaseにも全件同期
