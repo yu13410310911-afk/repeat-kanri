@@ -2951,9 +2951,20 @@
         if (error) throw error;
         if (data && data.length > 0) {
           STUDENTS = data.map(r => ({
-            id: r.id, name: r.name, grade: r.grade || '',
-            school: r.school || '', course: r.course || '',
-            baseFee: r.base_fee || 0, notes: r.notes || ''
+            id: r.id,
+            name: r.name,
+            grade: r.grade || '',
+            school: r.school || '',
+            course: r.course || '',
+            nameKana: r.kana || '',
+            transport: r.transport || false,
+            lunch: r.lunch || false,
+            saturday: r.saturday || false,
+            sibling: r.sibling || false,
+            bankInfo: r.bank_info || '',
+            spotDayRate: r.spot_day_rate || 1200,
+            baseFee: r.base_fee || 0,
+            notes: r.notes || ''
           }));
           localStorage.setItem('repeatStudentsData', JSON.stringify(STUDENTS));
         }
@@ -2964,9 +2975,20 @@
 
     async function sbSaveStudent(student) {
       const row = {
-        id: student.id, name: student.name, grade: student.grade,
-        school: student.school, course: student.course,
-        base_fee: student.baseFee || 0, notes: student.notes || ''
+        id: String(student.id),
+        name: student.name || '',
+        grade: student.grade || '',
+        school: student.school || '',
+        course: student.course || '',
+        kana: student.nameKana || student.kana || '',
+        transport: !!student.transport,
+        lunch: !!student.lunch,
+        saturday: !!student.saturday,
+        sibling: !!student.sibling,
+        bank_info: student.bankInfo || '',
+        spot_day_rate: student.spotDayRate || 1200,
+        base_fee: student.baseFee || 0,
+        notes: student.notes || ''
       };
       const { error } = await _sb.from('students').upsert(row, { onConflict: 'id' });
       if (error) console.error('[Supabase] student保存エラー:', error.message);
