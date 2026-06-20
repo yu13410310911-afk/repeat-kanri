@@ -4885,6 +4885,10 @@
             setTimeout(() => alertBox.style.display = 'none', 3000);
           }
           localStorage.setItem('repeatStudentsData', JSON.stringify(STUDENTS));
+          // Supabaseにも全件同期
+          if (_sbReady) {
+            STUDENTS.forEach(s => sbSaveStudent(s));
+          }
           if (typeof refreshCurrentView === 'function') refreshCurrentView();
           else {
             renderRoster();
