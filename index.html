@@ -2003,8 +2003,20 @@
               </div>
             </div>
 
+            <!-- CSV取込 -->
+            <div style="margin-bottom:12px;padding:12px 16px;background:#f0f9ff;border:1px solid #bae6fd;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <i class="ph ph-download-simple" style="font-size:18px;color:#0284c7;"></i>
+              <span style="font-size:13px;font-weight:600;color:#0c4a6e;">スクマネCSV取込</span>
+              <button class="btn btn-sm" style="background:#0284c7;color:#fff;border:none;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;"
+                onclick="document.getElementById('manualDayCsvInput').click()">
+                CSVを選択
+              </button>
+              <input type="file" id="manualDayCsvInput" accept=".csv" style="display:none;" onchange="handleManualDayCSV(event)" />
+              <span style="font-size:11px;color:#0369a1;">取込後に出欠カードが自動生成されます</span>
+            </div>
+
             <!-- 長期休業日・イベント料金 -->
-            <div style="margin-bottom:16px;padding:12px 16px;background:var(--bg-light);border:1px solid var(--border);border-radius:8px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+            <div style="margin-bottom:16px;padding:12px 16px;background:var(--bg-light);border:1px solid var(--border);display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
               <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer;">
                 <input type="checkbox" id="manualIsLongHol" style="transform:scale(1.2);" onchange="applyLongHolManual(this.checked)"> 長期休業日
               </label>
@@ -3107,6 +3119,42 @@
     // DOMContentLoaded後に初期ロード実行
     document.addEventListener('DOMContentLoaded', () => {
       if (_sbReady) sbInitLoad();
+
+      // リロード時のセッション復元
+      const saved = localStorage.getItem('repeatSession');
+      if (saved) {
+        try {
+          const sess = JSON.parse(saved);
+          if (sess.user && sess.school) {
+            currentUser  = sess.user;
+            currentSchool = sess.school;
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
+            renderMenu();
+            loadPaymentDataLocal();
+            const curYM = getCurrentYM();
+            STUDENTS.forEach(s => {
+              paymentData[s.id] = paymentData[s.id] || {};
+              paymentData[s.id][curYM] = paymentData[s.id][curYM] || { status: '未引落' };
+            });
+            populateMonthSelects();
+            populateCalStudents();
+            if (currentUser.role === 'admin') {
+              showPage('page-dashboard');
+              renderDashboard(); renderBilling(); renderPayment(); renderSchedule();
+              initPayrollSystem();
+            } else {
+              showPage('page-manual-input');
+              setTimeout(() => {
+                initManualInputPage();
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('manualSchool').value = currentSchool;
+                openManualDay(today);
+              }, 100);
+            }
+          }
+        } catch(e) { localStorage.removeItem('repeatSession'); }
+      }
     });
 
     // ===== 下校時刻データ =====
@@ -3573,10 +3621,9 @@
       admin: [
         { section: '管理業務' },
         { id: 'dashboard', icon: '<i class="ph ph-squares-four" style="font-size:18px;"></i>', title: 'ダッシュボード', page: 'page-dashboard' },
-        { id: 'attendance-admin', icon: '<i class="ph ph-check-circle" style="font-size:18px;"></i>', title: '当日の出欠入力', page: 'page-attendance' },
+        { id: 'attendance-admin', icon: '<i class="ph ph-check-circle" style="font-size:18px;"></i>', title: '出欠入力', page: 'page-manual-input' },
         { id: 'reports', icon: '<i class="ph ph-envelope-simple" style="font-size:18px;"></i>', title: '現場からの日報', page: 'page-reports-admin' },
         { id: 'billing', icon: '<i class="ph ph-currency-jpy" style="font-size:18px;"></i>', title: '月謝計算・請求', page: 'page-billing' },
-        { id: 'manual-input', icon: '<i class="ph ph-note-pencil" style="font-size:18px;"></i>', title: '手入力モード（遡り入力）', page: 'page-manual-input' },
         { id: 'payment', icon: '<i class="ph ph-credit-card" style="font-size:18px;"></i>', title: '支払い状況', page: 'page-payment' },
         { id: 'roster', icon: '<i class="ph ph-users" style="font-size:18px;"></i>', title: '生徒名簿管理', page: 'page-roster' },
         { id: 'payroll', icon: '<i class="ph ph-pencil-simple" style="font-size:18px;"></i>', title: '給与計算・シフト', page: 'page-payroll' },
@@ -3590,7 +3637,7 @@
       ],
       staff: [
         { section: '現場業務' },
-        { id: 'attendance', icon: '<i class="ph ph-check-circle" style="font-size:18px;"></i>', title: '当日の出欠入力', page: 'page-attendance' },
+        { id: 'attendance', icon: '<i class="ph ph-check-circle" style="font-size:18px;"></i>', title: '出欠入力', page: 'page-manual-input' },
         { id: 'roster-staff', icon: '<i class="ph ph-users" style="font-size:18px;"></i>', title: '生徒一覧（確認用）', page: 'page-roster-staff' },
         { id: 'calendar', icon: '<i class="ph ph-calendar" style="font-size:18px;"></i>', title: '出欠カレンダー', page: 'page-calendar' },
         { id: 'report', icon: '<i class="ph ph-pencil-simple" style="font-size:18px;"></i>', title: '日報・管理者へ連絡', page: 'page-report-staff' },
@@ -3716,6 +3763,7 @@
 
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
+      localStorage.setItem('repeatSession', JSON.stringify({ user: currentUser, school: currentSchool }));
 
       // バッジとプロフィールの更新
       const badge = document.getElementById('schoolBadge');
@@ -3772,13 +3820,20 @@
         // 給与計算用初期化
         initPayrollSystem();
       } else {
-        // 初期状態では空欄
-        document.getElementById('attInputList').innerHTML = '<div class="empty-state"><div class="icon"><i class="ph ph-download-simple" style="color:var(--primary);"></i></div><p>上部の枠からSukumaneのCSVを読み込んでください</p></div>';
-        renderCalendar();
+        // スタッフ：統合出欠入力ページを開いて今日を自動表示
+        showPage('page-manual-input', '出欠入力');
+        setTimeout(() => {
+          initManualInputPage();
+          const today = new Date().toISOString().split('T')[0];
+          const schoolSel = document.getElementById('manualSchool');
+          if (schoolSel) schoolSel.value = currentSchool;
+          openManualDay(today);
+        }, 100);
       }
     }
 
     function logout() {
+      localStorage.removeItem('repeatSession');
       document.getElementById('loginScreen').style.display = 'flex';
       document.getElementById('app').style.display = 'none';
       currentUser = null;
@@ -4286,8 +4341,12 @@
       if (schoolFilter !== 'all') {
         targetStudents = targetStudents.filter(s => s.school === schoolFilter);
       }
-      // あいうえお順にソート（学校に関わらずリストを名前順にする）
-      targetStudents.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      // あいうえお順（ふりがな優先、なければ漢字名）
+      targetStudents.sort((a, b) => {
+        const ka = a.nameKana || a.name;
+        const kb = b.nameKana || b.name;
+        return ka.localeCompare(kb, 'ja');
+      });
 
       targetStudents.forEach(s => {
         // 現場データがなければ既存のダミーデータをフォールバックとして使用するか判定
@@ -7339,6 +7398,71 @@
       renderManualCalendar(); // 進捗を更新
     }
 
+    // 統合出欠入力ページ用：CSVをmanualDayViewに読み込む
+    function handleManualDayCSV(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!_manualCurrentDate) { showSysToast('先にカレンダーから日付を選択してください'); return; }
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const text = evt.target.result;
+        const sep  = text.includes('\t') ? '\t' : ',';
+        const lines = text.split('\n');
+
+        let nameIdx = 0, absentIdx = -1;
+        if (lines.length > 0) {
+          const hdr = lines[0].split(sep).map(c => c.replace(/^"|"$/g,'').trim());
+          const fi = hdr.findIndex(h => h.includes('名') || h.includes('氏'));
+          if (fi >= 0) nameIdx = fi;
+          const ai = hdr.findIndex(h => h.includes('出欠'));
+          if (ai >= 0) absentIdx = ai;
+        }
+
+        const isLongHol  = document.getElementById('manualIsLongHol')?.checked || false;
+        const eventFeeV  = parseInt(document.getElementById('manualEventFee')?.value) || 0;
+        const schoolStudents = STUDENTS.filter(s => s.school === _manualSchool)
+          .sort((a,b) => a.name.localeCompare(b.name,'ja'));
+
+        const newData = schoolStudents.map(st => {
+          // CSV行と生徒名マッチング
+          let csvRow = null;
+          for (let i = 1; i < lines.length; i++) {
+            if (!lines[i].trim()) continue;
+            const cols = lines[i].split(sep).map(c => c.replace(/^"|"$/g,'').trim());
+            const csvName = (cols[nameIdx] || '').replace(/\s+/g,'');
+            if (st.name.replace(/\s+/g,'') === csvName) { csvRow = cols; break; }
+          }
+
+          const c = st.course || '';
+          const defaultAbsent = c.includes('特別') || c.includes('12日');
+          let isAbsent = csvRow
+            ? (absentIdx >= 0 ? csvRow[absentIdx]?.includes('欠席') : defaultAbsent)
+            : defaultAbsent;
+
+          const rowMemo = csvRow ? csvRow.join(' ') : '';
+          const isLargeBento = rowMemo.includes('大盛');
+          const isNormalBento = rowMemo.includes('弁当') && !isLargeBento;
+
+          return {
+            studentId: st.id, name: st.name, grade: st.grade,
+            course: st.course, school: st.school,
+            isAbsent,
+            hasExtMorn: false, exitTime: '',
+            hasBento: isNormalBento, hasLargeBento: isLargeBento,
+            hasPotato: rowMemo.includes('ポテト'),
+            hasLongHol: !isAbsent && isLongHol,
+            eventFee:   !isAbsent ? eventFeeV : 0
+          };
+        });
+
+        renderManualAttCards(_manualCurrentDate, newData);
+        showSysToast(`CSV取込完了（${newData.filter(r=>!r.isAbsent).length}名出席）`);
+      };
+      reader.readAsText(file, 'Shift_JIS');
+      e.target.value = '';
+    }
+
     // 祝日判定（簡易: 国民の祝日のうち固定日のみ）
     function getJpHolidays(year, mon) {
       const fixed = [
@@ -7544,16 +7668,25 @@
       };
     }
 
-    // showPage に手入力ページを追加
+    // showPage に出欠入力（統合）ページのフック
     (function() {
       const _origShowPage = showPage;
       showPage = function(pageId, arg2, arg3) {
         _origShowPage(pageId, arg2, arg3);
         if (pageId === 'page-manual-input' || pageId === 'manual-input') {
           initManualInputPage();
-          // 初回表示時にカレンダーを自動描画
-          const grid = document.getElementById('manualCalendarGrid');
-          if (grid && !grid.innerHTML) renderManualCalendar();
+
+          // スタッフは校舎を固定して今日を自動オープン
+          if (currentUser && currentUser.role === 'staff') {
+            const schoolSel = document.getElementById('manualSchool');
+            if (schoolSel) schoolSel.value = currentSchool;
+            const today = new Date().toISOString().split('T')[0];
+            setTimeout(() => openManualDay(today), 50);
+          } else {
+            // 管理者は月カレンダーを表示（初回のみ自動描画）
+            const grid = document.getElementById('manualCalendarGrid');
+            if (grid && !grid.innerHTML) renderManualCalendar();
+          }
         }
       };
     })();
